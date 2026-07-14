@@ -67,7 +67,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .project-chip__mark { width: 38px; height: 38px; filter: drop-shadow(0 7px 12px rgba(45, 67, 52, .15)); }
 .project-chip > div:last-child { display: grid; gap: 2px; min-width: 0; }
 .project-chip strong { font-family: var(--display); font-size: 18px; font-weight: 520; letter-spacing: -.016em; }
-.project-chip span { overflow: hidden; color: #6f776d; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.project-chip span { color: #6f776d; font-size: 11px; line-height: 1.35; }
 
 .field-summary {
   position: absolute;
@@ -149,7 +149,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .field-card__kind, .field-card__agent { display: inline-flex; align-items: center; gap: 5px; color: var(--card-accent); font-size: 9px; font-weight: 650; letter-spacing: .085em; text-transform: uppercase; }
 .field-card__agent { color: #7c8178; letter-spacing: .03em; }
 .field-card h2 { margin: 0; font-family: var(--display); font-size: 18px; font-weight: 520; line-height: 1.2; letter-spacing: -.014em; }
-.field-card p { display: -webkit-box; margin: 8px 0 0; overflow: hidden; color: var(--ink-soft); font-size: 11px; line-height: 1.52; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.field-card p { margin: 8px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.52; }
 .field-card footer { margin: 13px -17px -15px; padding: 9px 17px 10px; overflow: hidden; border-top: 1px solid rgba(91, 91, 78, .1); border-radius: 0 0 14px 14px; color: #806f52; background: rgba(120, 108, 83, .025); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .field-card footer.needs-source { color: var(--danger); }
 .field-card footer.pattern-signal { color: #716e6b; }

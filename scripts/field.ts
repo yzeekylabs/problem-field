@@ -23,6 +23,9 @@ function formatContext(workspace: Workspace, requestId?: string) {
     `Status: ${workspace.project.status}`,
     `Active loop stage: ${workspace.project.activeStage}`,
     `Guiding question: ${workspace.project.question}`,
+    ...(workspace.project.display
+      ? [`Visual heading: ${workspace.project.display.title} — ${workspace.project.display.summary}`]
+      : []),
     "",
     "## Sources",
   ];
@@ -45,6 +48,7 @@ function formatContext(workspace: Workspace, requestId?: string) {
       `- [${card.id}] ${card.kind.toUpperCase()} — ${card.title} | position=(${card.position.x}, ${card.position.y}) | by=${card.createdBy}${source}`,
     );
     if (card.body) lines.push(`  ${card.body.replaceAll("\n", " ")}`);
+    if (card.display) lines.push(`  Visual copy: ${card.display.title} — ${card.display.summary}`);
     if (card.sourceRef?.quote) lines.push(`  Exact quote: “${card.sourceRef.quote.replaceAll("\n", " ")}”`);
   }
 
@@ -83,7 +87,7 @@ function formatContext(workspace: Workspace, requestId?: string) {
   lines.push(
     "",
     "## Write protocol",
-    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit workspace JSON directly. Use addAgentProposal for new interpretations.`,
+    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit workspace JSON directly. Use addAgentProposal for new interpretations. Keep full content intact; add display copy (title <= 60 characters, summary <= 120 characters) for concise visual surfaces.`,
   );
 
   return lines.join("\n");

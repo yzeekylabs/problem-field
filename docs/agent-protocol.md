@@ -27,6 +27,10 @@ Create `work/agent-ops.json` with the current revision. Interpretations should e
           "kind": "pattern",
           "title": "The integration tax may be cognitive",
           "body": "The user is acting as the integration layer between source, chat, and canvas.",
+          "display": {
+            "title": "The integration tax may be cognitive",
+            "summary": "People are manually carrying context between source, chat, and canvas."
+          },
           "position": { "x": 860, "y": 420 },
           "createdBy": "agent"
         },
@@ -52,6 +56,8 @@ npm run field -- context
 ```
 
 Use `addCard` for mechanical or user-directed canonical edits. Use `addAgentProposal` for new agent interpretations. Multimodal extraction updates a source with `updateSource`; it must report failure or uncertainty rather than invent content.
+
+Full project and card content carries meaning, evidence, qualifiers, and provenance. Optional `display` copy is a bounded visual projection: `title` is at most 60 characters and `summary` at most 120. Supply it when adding or updating meaning. If full content changes without replacement display copy, the domain invalidates the old display copy automatically so stale summaries cannot survive. Never shorten or rewrite exact evidence merely to make the canvas neater.
 
 Every run must treat the current field as durable truth. On a continued or retried request, do not recreate cards or source snapshots that already exist; resume from fresh context and apply only the missing operations. Completed operations stay committed even if the provider later reaches its safety limit.
 

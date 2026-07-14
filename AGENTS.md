@@ -12,6 +12,8 @@ When the user asks you to inspect, question, organize, or modify the problem fie
 
 Prefer traceable, conservative changes. Do not invent source provenance. New agent interpretations must use `addAgentProposal` so they remain provisional until human review. Use `updateSource` for extraction results and report uncertainty or failure explicitly.
 
+When adding or updating project or card meaning, preserve the full content and also write faithful `display` copy for the visual surface: a title of at most 60 characters and a summary of at most 120 characters. Keep uncertainty and qualifiers. Display copy is presentation metadata, never a replacement for evidence or rationale.
+
 When a request is started by the local runner, do not resolve or finish it. The runner owns request lifecycle and records the final response or failure after your process exits. You may use read-only MCP tools already configured on the active agent host. When external material is brought into the field, add a source snapshot with `externalRef.connectorId`, `resourceId`, `retrievedAt`, and a URL or version when available.
 
 The operation schema and examples are in `docs/agent-protocol.md`.

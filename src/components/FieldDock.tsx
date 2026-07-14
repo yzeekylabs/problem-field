@@ -25,6 +25,7 @@ import {
 
 import { getAgentRunActivity } from "../api.ts";
 import { fieldStages, getNextMove } from "../sensemaking.ts";
+import { getCardDisplayCopy, getCompactLabel } from "../presentation-copy.ts";
 import type { AgentRunActivity } from "../shared/agent-activity.ts";
 import type { CardKind, FieldStage, Workspace } from "../shared/workspace.ts";
 
@@ -267,7 +268,7 @@ export function FieldDock({
                     type="button"
                   >
                     {source.kind === "image" ? <FileImage aria-hidden="true" size={15} /> : <FileText aria-hidden="true" size={15} />}
-                    <span><strong>{source.title}</strong><small>{source.kind} · {workspace.cards.filter((card) => card.sourceRef?.sourceId === source.id).length} evidence</small></span>
+                    <span><strong title={source.title}>{getCompactLabel(source.title)}</strong><small>{source.kind} · {workspace.cards.filter((card) => card.sourceRef?.sourceId === source.id).length} evidence</small></span>
                   </button>
                 ))}
               </div>
@@ -298,17 +299,20 @@ export function FieldDock({
                   <strong>No provisional interpretations</strong>
                   <p>Ask for clusters or counter-evidence. Codex or Claude Code can answer through the shared CLI protocol.</p>
                 </div>
-              ) : pendingProposals.map((proposal) => (
-                <article className="proposal-card" key={proposal.id}>
-                  <span>Proposed {proposal.kind} · {proposal.scopeCardIds.length} linked cards</span>
-                  <h3>{proposal.title}</h3>
-                  <p>{proposal.rationale}</p>
-                  <div>
-                    <button onClick={() => onReviewProposal(proposal.id, "dismissed")} type="button"><X aria-hidden="true" size={14} /> Dismiss</button>
-                    <button className="proposal-card__accept" onClick={() => onReviewProposal(proposal.id, "accepted")} type="button"><Check aria-hidden="true" size={14} /> Place on field</button>
-                  </div>
-                </article>
-              ))}
+              ) : pendingProposals.map((proposal) => {
+                const display = getCardDisplayCopy(proposal.proposedCard);
+                return (
+                  <article className="proposal-card" key={proposal.id}>
+                    <span>Proposed {proposal.kind} · {proposal.scopeCardIds.length} linked cards</span>
+                    <h3 title={proposal.title}>{display.title}</h3>
+                    <p title={proposal.rationale}>{display.summary}</p>
+                    <div>
+                      <button onClick={() => onReviewProposal(proposal.id, "dismissed")} type="button"><X aria-hidden="true" size={14} /> Dismiss</button>
+                      <button className="proposal-card__accept" onClick={() => onReviewProposal(proposal.id, "accepted")} type="button"><Check aria-hidden="true" size={14} /> Place on field</button>
+                    </div>
+                  </article>
+                );
+              })}
               {recentRequests.length > 0 && (
                 <div className="request-queue">
                   <span>Agent activity</span>

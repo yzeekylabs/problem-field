@@ -11,7 +11,7 @@ const now = "2026-07-14T04:00:00.000Z";
 
 function workspace(): Workspace {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: 2,
     updatedAt: now,
     project: {
@@ -51,7 +51,7 @@ describe("applyOperationSet", () => {
 
     const migrated = parseWorkspace(legacy);
 
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(migrated.project.activeStage).toBe("forage");
     expect(migrated.project.onboardingComplete).toBe(true);
     expect(migrated.agentProposals).toEqual([]);
@@ -87,6 +87,48 @@ describe("applyOperationSet", () => {
     expect(result.revision).toBe(3);
     expect(result.cards).toHaveLength(2);
     expect(result.connections).toHaveLength(1);
+  });
+
+  it("stores bounded display copy with provenance and invalidates it when meaning changes", () => {
+    const summarized = applyOperationSet(
+      workspace(),
+      {
+        baseRevision: 2,
+        actor: "agent",
+        operations: [
+          {
+            type: "updateProject",
+            patch: { display: { title: "Test field", summary: "A concise project focus." } },
+          },
+          {
+            type: "updateCard",
+            cardId: "a",
+            patch: { display: { title: "Concise A", summary: "A concise card summary." } },
+          },
+        ],
+      },
+      "2026-07-14T05:00:00.000Z",
+    );
+
+    expect(summarized.project.display).toEqual({
+      title: "Test field",
+      summary: "A concise project focus.",
+      generatedBy: "agent",
+      updatedAt: "2026-07-14T05:00:00.000Z",
+    });
+    expect(summarized.cards[0].display?.generatedBy).toBe("agent");
+
+    const edited = applyOperationSet(summarized, {
+      baseRevision: 3,
+      actor: "human",
+      operations: [
+        { type: "updateProject", patch: { question: "What changed?" } },
+        { type: "updateCard", cardId: "a", patch: { body: "New meaning" } },
+      ],
+    });
+
+    expect(edited.project.display).toBeUndefined();
+    expect(edited.cards[0].display).toBeUndefined();
   });
 
   it("rejects a connection to a missing card without mutating the input", () => {

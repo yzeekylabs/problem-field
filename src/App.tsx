@@ -29,6 +29,7 @@ import {
 } from "./field-layout.ts";
 import { getPatternSignal } from "./sensemaking.ts";
 import { inferSourceKind } from "./source-files.ts";
+import { getCardDisplayCopy, getProjectDisplayCopy } from "./presentation-copy.ts";
 import type {
   CardKind,
   FieldOperation,
@@ -352,6 +353,7 @@ export default function App() {
 
   const evidenceCount = workspace.cards.filter((card) => card.kind === "evidence").length;
   const patternCount = workspace.cards.filter((card) => card.kind === "pattern").length;
+  const projectDisplay = getProjectDisplayCopy(workspace.project);
 
   return (
     <main
@@ -407,7 +409,10 @@ export default function App() {
           <>
             <header className="project-chip">
               <FieldLogo className="project-chip__mark" />
-              <div><strong>{workspace.project.name}</strong><span>{workspace.project.question}</span></div>
+              <div>
+                <strong title={workspace.project.name}>{projectDisplay.title}</strong>
+                <span title={workspace.project.question}>{projectDisplay.summary}</span>
+              </div>
             </header>
 
             {(workspace.sources.length > 0 || workspace.cards.length > 0) && (
@@ -439,7 +444,7 @@ export default function App() {
               onUpdateQuestion={(question) => void mutate([
                 { type: "updateProject", patch: { question } },
               ], "Focus updated")}
-              selectedTitle={selectedCard?.title}
+              selectedTitle={selectedCard ? getCardDisplayCopy(selectedCard).title : undefined}
               workspace={workspace}
             />
           </>

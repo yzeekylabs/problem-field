@@ -5,6 +5,18 @@ const positionSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
 });
+const actorSchema = z.enum(["human", "agent", "system"]);
+
+const displayCopyInputSchema = z.object({
+  title: z.string().min(1).max(60),
+  summary: z.string().min(1).max(120),
+});
+
+export const displayCopySchema = displayCopyInputSchema.extend({
+  generatedBy: actorSchema,
+  updatedAt: z.string().datetime(),
+});
+export type DisplayCopy = z.infer<typeof displayCopySchema>;
 
 export const cardKindSchema = z.enum([
   "evidence",
@@ -71,13 +83,16 @@ export const cardSchema = z.object({
   body: z.string().max(20_000),
   position: positionSchema,
   sourceRef: sourceRefSchema.optional(),
+  display: displayCopySchema.optional(),
   createdBy: z.enum(["human", "agent", "system"]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 export type FieldCard = z.infer<typeof cardSchema>;
 
-const addCardInputSchema = cardSchema.omit({ createdAt: true, updatedAt: true });
+const addCardInputSchema = cardSchema
+  .omit({ createdAt: true, updatedAt: true, display: true })
+  .extend({ display: displayCopyInputSchema.optional() });
 
 export const connectionSchema = z.object({
   id: idSchema,
@@ -121,7 +136,7 @@ export const agentProposalSchema = z.object({
 export type AgentProposal = z.infer<typeof agentProposalSchema>;
 
 export const workspaceSchema = z.object({
-  schemaVersion: z.literal(3),
+  schemaVersion: z.literal(4),
   revision: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
   project: z.object({
@@ -130,6 +145,7 @@ export const workspaceSchema = z.object({
     status: z.enum(["exploring", "framing", "paused"]),
     activeStage: fieldStageSchema,
     onboardingComplete: z.boolean(),
+    display: displayCopySchema.optional(),
   }),
   sources: z.array(sourceSchema),
   cards: z.array(cardSchema),
@@ -146,7 +162,7 @@ export function parseWorkspace(input: unknown): Workspace {
     ? candidate.project as Record<string, unknown>
     : null;
 
-  if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3) {
+  if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3 || candidate.schemaVersion === 4) {
     candidate.agentProposals ??= [];
     if (project) {
       project.activeStage ??= project.status === "framing" ? "frame" : "forage";
@@ -161,7 +177,7 @@ export function parseWorkspace(input: unknown): Workspace {
       if (request.resolvedAt && !request.finishedAt) request.finishedAt = request.resolvedAt;
       delete request.resolvedAt;
     }
-    candidate.schemaVersion = 3;
+    candidate.schemaVersion = 4;
   }
 
   return workspaceSchema.parse(candidate);
@@ -171,6 +187,7 @@ const updateCardPatchSchema = z.object({
   title: z.string().min(1).max(240).optional(),
   body: z.string().max(20_000).optional(),
   sourceRef: sourceRefSchema.nullable().optional(),
+  display: displayCopyInputSchema.nullable().optional(),
 });
 
 export const operationSchema = z.discriminatedUnion("type", [
@@ -182,6 +199,7 @@ export const operationSchema = z.discriminatedUnion("type", [
       status: z.enum(["exploring", "framing", "paused"]).optional(),
       activeStage: fieldStageSchema.optional(),
       onboardingComplete: z.boolean().optional(),
+      display: displayCopyInputSchema.nullable().optional(),
     }),
   }),
   z.object({ type: z.literal("addCard"), card: addCardInputSchema }),
@@ -258,7 +276,7 @@ export type FieldOperation = z.infer<typeof operationSchema>;
 
 export const operationSetSchema = z.object({
   baseRevision: z.number().int().nonnegative(),
-  actor: z.enum(["human", "agent", "system"]),
+  actor: actorSchema,
   operations: z.array(operationSchema).min(1).max(100),
 });
 export type OperationSet = z.infer<typeof operationSetSchema>;
@@ -340,21 +358,42 @@ export function applyOperationSet(
   for (const operation of input.operations) {
     switch (operation.type) {
       case "updateProject": {
-        next.project = { ...next.project, ...operation.patch };
+        const { display, ...patch } = operation.patch;
+        const meaningChanged = patch.name !== undefined || patch.question !== undefined;
+        next.project = { ...next.project, ...patch };
+        if (display === null) delete next.project.display;
+        else if (display !== undefined) {
+          next.project.display = { ...display, generatedBy: input.actor, updatedAt: now };
+        } else if (meaningChanged) {
+          delete next.project.display;
+        }
         break;
       }
       case "addCard": {
         requireUniqueId(next.cards, operation.card.id, "Card");
-        next.cards.push({ ...operation.card, createdAt: now, updatedAt: now });
+        const { display, ...card } = operation.card;
+        next.cards.push({
+          ...card,
+          ...(display ? { display: { ...display, generatedBy: input.actor, updatedAt: now } } : {}),
+          createdAt: now,
+          updatedAt: now,
+        });
         break;
       }
       case "updateCard": {
         const card = requireCard(next, operation.cardId);
+        const meaningChanged = operation.patch.title !== undefined || operation.patch.body !== undefined;
         if (operation.patch.title !== undefined) card.title = operation.patch.title;
         if (operation.patch.body !== undefined) card.body = operation.patch.body;
         if (operation.patch.sourceRef !== undefined) {
           if (operation.patch.sourceRef === null) delete card.sourceRef;
           else card.sourceRef = operation.patch.sourceRef;
+        }
+        if (operation.patch.display === null) delete card.display;
+        else if (operation.patch.display !== undefined) {
+          card.display = { ...operation.patch.display, generatedBy: input.actor, updatedAt: now };
+        } else if (meaningChanged) {
+          delete card.display;
         }
         card.updatedAt = now;
         break;
@@ -509,7 +548,13 @@ export function applyOperationSet(
         }
         if (operation.decision === "accepted") {
           requireUniqueId(next.cards, proposal.proposedCard.id, "Proposed card");
-          next.cards.push({ ...proposal.proposedCard, createdAt: now, updatedAt: now });
+          const { display, ...proposedCard } = proposal.proposedCard;
+          next.cards.push({
+            ...proposedCard,
+            ...(display ? { display: { ...display, generatedBy: "agent" as const, updatedAt: now } } : {}),
+            createdAt: now,
+            updatedAt: now,
+          });
           for (const connection of proposal.proposedConnections) {
             requireUniqueId(next.connections, connection.id, "Proposed connection");
             next.connections.push(connection);

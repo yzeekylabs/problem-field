@@ -3,6 +3,7 @@ import { Bot, FileText, Lightbulb, MessageCircleQuestion, Quote } from "lucide-r
 
 import type { FieldCard, Source } from "../shared/workspace.ts";
 import type { PatternSignal } from "../sensemaking.ts";
+import { getCardDisplayCopy, getCompactLabel } from "../presentation-copy.ts";
 
 export type FieldNodeData = {
   card: FieldCard;
@@ -22,11 +23,17 @@ const kindIcons = {
 export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
   const { card, source, signal } = data;
   const Icon = kindIcons[card.kind];
+  const display = getCardDisplayCopy(card);
+  const sourceLabel = source ? getCompactLabel(source.title, 42) : "Needs a source";
+  const provenanceTitle = [source?.title ?? "Needs a source", card.sourceRef?.locator]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <article
       className={`field-card field-card--${card.kind}${selected ? " is-selected" : ""}`}
       data-created-by={card.createdBy}
+      aria-label={`${card.kind}: ${display.title}`}
     >
       <Handle className="field-handle field-handle--target" id="top" type="target" position={Position.Top} />
       <Handle className="field-handle field-handle--target" id="right" type="target" position={Position.Right} />
@@ -48,12 +55,11 @@ export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
           </span>
         )}
       </header>
-      <h2>{card.title}</h2>
-      <p>{card.body || "No detail yet."}</p>
+      <h2 title={card.title}>{display.title}</h2>
+      <p title={card.body}>{display.summary}</p>
       {card.kind === "evidence" && (
-        <footer className={source ? "" : "needs-source"}>
-          {source ? source.title : "Needs a source"}
-          {card.sourceRef?.locator ? ` · ${card.sourceRef.locator}` : ""}
+        <footer className={source ? "" : "needs-source"} title={provenanceTitle}>
+          {sourceLabel}
         </footer>
       )}
       {card.kind === "pattern" && signal && (

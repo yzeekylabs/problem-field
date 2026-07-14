@@ -36,12 +36,15 @@ This is the core split-brain defense: AI conversation state, visual layout state
 
 Canvas arrangement follows the same rule. Card coordinates in the workspace are the user's canonical **Custom** layout. **Grouped** is a browser-only projection derived from current cards and relationships: it lays out connected islands, routes edges to the nearest card sides, and never writes positions or increments the workspace revision. Returning to Custom therefore restores the exact saved coordinates rather than reconstructing them from another client-side store.
 
+Visual copy is bounded presentation metadata stored beside—never instead of—the full project or card content. Agent-generated display titles and summaries retain their author and update time. A semantic edit to the full title, body, name, or question invalidates existing display copy unless the same operation supplies a replacement. Surfaces use a word-boundary fallback while copy is missing, so layout remains readable without letting a stale summary become a second truth.
+
 Execution activity is a fourth, explicitly non-canonical lane. The runner writes sanitized lifecycle and tool-category milestones under `data/local/agent-runs/`, keyed by the canonical request's `runId`. The browser reads that lane for live feedback, but it cannot turn activity into evidence or mutate the workspace through it. Keeping these frequent updates out of `workspace.json` also prevents progress reporting from racing the agent's own revision-checked field operations.
 
 ## Invariants
 
 - The browser does not persist an independent canvas snapshot.
 - Presentation-only canvas arrangements cannot write canonical card positions.
+- Full content edits invalidate stale visual summaries by default.
 - Agents do not edit workspace JSON directly.
 - Writes fail closed when `baseRevision` is stale.
 - Connections and proposal scopes cannot reference missing cards.
@@ -72,4 +75,4 @@ An MCP connection grants the agent a route to retrieve context. It does not auto
 
 The file store is intentionally sufficient for a local, single-user test. When collaboration or query volume requires it, the operation contract can sit over SQLite/event history and then a hosted service. The migration boundary is storage, not the product ontology.
 
-The parser migrates schema-v1 and schema-v2 workspaces into schema v3 in memory, including the durable request lifecycle. Existing fields are marked as already onboarded, so an upgrade preserves their cards and does not replay first run.
+The parser migrates schema-v1 through schema-v3 workspaces into schema v4 in memory, including the durable request lifecycle and optional visual-copy projection. Existing fields are marked as already onboarded, so an upgrade preserves their cards and does not replay first run.
