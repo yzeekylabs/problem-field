@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import {
   ArrowUp,
   Bot,
+  AlertCircle,
   Check,
+  CheckCircle2,
   ChevronDown,
   Compass,
   Database,
@@ -10,12 +12,14 @@ import {
   FilePlus2,
   FileText,
   HelpCircle,
+  LoaderCircle,
   Layers3,
   Lightbulb,
   Plus,
+  Plug,
   Quote,
+  Route,
   Save,
-  Sparkles,
   X,
 } from "lucide-react";
 
@@ -30,6 +34,7 @@ type FieldDockProps = {
   selectedTitle?: string;
   onAddCard: (kind: CardKind) => void;
   onAddSource: () => void;
+  onOpenConnectors: () => void;
   onAsk: (prompt: string) => Promise<void>;
   onSetStage: (stage: FieldStage) => void;
   onUpdateQuestion: (question: string) => void;
@@ -55,6 +60,7 @@ export function FieldDock({
   selectedTitle,
   onAddCard,
   onAddSource,
+  onOpenConnectors,
   onAsk,
   onSetStage,
   onUpdateQuestion,
@@ -68,7 +74,8 @@ export function FieldDock({
   const nextMove = useMemo(() => getNextMove(workspace), [workspace]);
   const activeStage = fieldStages.find((stage) => stage.id === workspace.project.activeStage)!;
   const pendingProposals = workspace.agentProposals.filter((proposal) => proposal.status === "pending");
-  const openRequests = workspace.agentRequests.filter((request) => request.status === "open");
+  const activeRequests = workspace.agentRequests.filter((request) => request.status === "queued" || request.status === "running");
+  const recentRequests = [...workspace.agentRequests].reverse().slice(0, 4);
   const effectiveSourceId = selectedSourceId || workspace.sources[0]?.id;
   const selectedSource = workspace.sources.find((source) => source.id === effectiveSourceId);
 
@@ -97,9 +104,9 @@ export function FieldDock({
 
   return (
     <div className="dock-stack">
-      {view === null && (
+      {view === null && workspace.cards.length > 0 && (
         <aside className="next-move" aria-label="Suggested next move">
-          <div className="next-move__mark"><Sparkles aria-hidden="true" size={14} /></div>
+          <div className="next-move__mark"><Route aria-hidden="true" size={14} /></div>
           <div>
             <span>Next move · {fieldStages.find((stage) => stage.id === nextMove.stage)?.label}</span>
             <strong>{nextMove.title}</strong>
@@ -161,6 +168,10 @@ export function FieldDock({
                 <FilePlus2 aria-hidden="true" size={18} />
                 <span><strong>Source</strong><small>Call, note, image, audio, video, or document</small></span>
               </button>
+              <button onClick={onOpenConnectors} type="button">
+                <Plug aria-hidden="true" size={18} />
+                <span><strong>Connected source</strong><small>Linear, Notion, Figma, or Granola</small></span>
+              </button>
               {addOptions.map(({ kind, label, description, icon: Icon }) => (
                 <button key={kind} onClick={() => onAddCard(kind)} type="button">
                   <Icon aria-hidden="true" size={17} />
@@ -175,6 +186,9 @@ export function FieldDock({
               <div className="source-browser__list">
                 <button className="source-browser__add" onClick={onAddSource} type="button">
                   <Plus aria-hidden="true" size={14} /> Add source
+                </button>
+                <button className="source-browser__connect" onClick={onOpenConnectors} type="button">
+                  <Plug aria-hidden="true" size={14} /> Connect workspace
                 </button>
                 {workspace.sources.map((source) => (
                   <button
@@ -191,7 +205,7 @@ export function FieldDock({
               <div className="source-browser__preview">
                 {selectedSource ? (
                   <>
-                    <header><span>{selectedSource.kind}</span><strong>{selectedSource.title}</strong><small>{selectedSource.origin ?? selectedSource.asset?.originalName ?? "Local source"}</small></header>
+                    <header><span>{selectedSource.kind}</span><strong>{selectedSource.title}</strong><small>{selectedSource.origin ?? selectedSource.asset?.originalName ?? (selectedSource.externalRef ? `${selectedSource.externalRef.connectorId} · retrieved ${new Date(selectedSource.externalRef.retrievedAt).toLocaleDateString()}` : "Local source")}</small></header>
                     {selectedSource.kind === "image" && selectedSource.asset && (
                       <img alt={selectedSource.title} src={`/api/assets/${encodeURIComponent(selectedSource.asset.fileName)}`} />
                     )}
@@ -226,13 +240,24 @@ export function FieldDock({
                   </div>
                 </article>
               ))}
-              {openRequests.length > 0 && (
+              {recentRequests.length > 0 && (
                 <div className="request-queue">
-                  <span>Waiting for a coding agent</span>
-                  {openRequests.map((request) => (
-                    <button key={request.id} onClick={() => onCopyRequestCommand(request.id)} type="button">
-                      <span>{request.prompt}</span><small>Copy context command</small>
-                    </button>
+                  <span>Agent activity</span>
+                  {recentRequests.map((request) => (
+                    <article className={`agent-run agent-run--${request.status}`} key={request.id}>
+                      <div className="agent-run__status">
+                        {request.status === "running" ? <LoaderCircle aria-hidden="true" className="connector-spinner" size={14} /> : request.status === "completed" ? <CheckCircle2 aria-hidden="true" size={14} /> : request.status === "failed" ? <AlertCircle aria-hidden="true" size={14} /> : <Bot aria-hidden="true" size={14} />}
+                        <strong>{request.status === "running" ? `${request.provider ?? "Agent"} is working` : request.status === "completed" ? "Completed" : request.status === "failed" ? "Needs attention" : "Queued"}</strong>
+                      </div>
+                      <p>{request.prompt}</p>
+                      {(request.response || request.error) && <small>{request.response ?? request.error}</small>}
+                      {request.status === "failed" && (
+                        <div className="agent-run__actions">
+                          <button disabled={busy} onClick={() => void submit(request.prompt)} type="button">Retry</button>
+                          <button onClick={() => onCopyRequestCommand(request.id)} type="button">Copy manual fallback</button>
+                        </div>
+                      )}
+                    </article>
                   ))}
                 </div>
               )}
@@ -242,7 +267,7 @@ export function FieldDock({
       )}
 
       <div className="field-dock">
-        <button className="dock-stage" onClick={() => toggle("loop")} type="button">
+        <button aria-label={`Open field loop, current stage ${activeStage.label}`} className="dock-stage" onClick={() => toggle("loop")} type="button">
           <Compass aria-hidden="true" size={16} />
           <span><small>Loop</small><strong>{activeStage.label}</strong></span>
           <ChevronDown aria-hidden="true" size={13} />
@@ -264,9 +289,11 @@ export function FieldDock({
         <button aria-label="View sources" className="dock-icon dock-icon--count" onClick={() => toggle("sources")} type="button">
           <Database aria-hidden="true" size={17} /><small>{workspace.sources.length}</small>
         </button>
-        <button aria-label="Review agent work" className="dock-icon dock-icon--count" onClick={() => toggle("proposals")} type="button">
-          <Layers3 aria-hidden="true" size={17} />{pendingProposals.length > 0 && <small>{pendingProposals.length}</small>}
-        </button>
+        {(pendingProposals.length > 0 || recentRequests.length > 0) && (
+          <button aria-label="Review agent work" className="dock-icon dock-icon--count" onClick={() => toggle("proposals")} type="button">
+            <Layers3 aria-hidden="true" size={17} />{(pendingProposals.length + activeRequests.length) > 0 && <small>{pendingProposals.length + activeRequests.length}</small>}
+          </button>
+        )}
         <button aria-label="Ask coding agent" className="dock-send" disabled={busy || !prompt.trim()} onClick={() => void submit()} type="button">
           <ArrowUp aria-hidden="true" size={17} />
         </button>

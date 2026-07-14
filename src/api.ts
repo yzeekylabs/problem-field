@@ -1,4 +1,5 @@
 import type { OperationSet, Workspace } from "./shared/workspace.ts";
+import type { ConnectorDefinition } from "./shared/connectors.ts";
 
 type ApiErrorBody = {
   error?: string;
@@ -55,4 +56,29 @@ export async function importSourceFile(
     throw new ApiError(errorBody.message ?? "The source could not be imported.", response.status, errorBody);
   }
   return response.json() as Promise<Workspace>;
+}
+
+export type ConnectorState = ConnectorDefinition & {
+  status: "available" | "configured" | "connecting" | "connected" | "failed" | "unavailable";
+  message?: string;
+};
+
+export type ConnectorStateResponse = {
+  provider: "codex" | "claude";
+  connectors: ConnectorState[];
+};
+
+export async function getConnectors(): Promise<ConnectorStateResponse> {
+  const response = await fetch("/api/connectors", { cache: "no-store" });
+  if (!response.ok) throw new ApiError("Could not read connector availability.", response.status, {});
+  return response.json() as Promise<ConnectorStateResponse>;
+}
+
+export async function connectConnector(id: string): Promise<ConnectorStateResponse> {
+  const response = await fetch(`/api/connectors/${encodeURIComponent(id)}/connect`, { method: "POST" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    throw new ApiError(body.message ?? "The connector could not be started.", response.status, body);
+  }
+  return response.json() as Promise<ConnectorStateResponse>;
 }

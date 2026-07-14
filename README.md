@@ -13,8 +13,9 @@ This is an early working slice, built to answer one question: **does it feel mat
 - Keep evidence visibly distinct from observations, patterns, and questions.
 - Preserve source provenance on evidence cards.
 - See pattern signal as evidence/source/contradiction composition rather than a fake score.
-- Ask a question from the canvas and place it in an agent queue.
+- Ask a question from the canvas and have the local runner claim, execute, and report it through Codex.
 - Let Codex or Claude Code propose patterns and questions for explicit human review.
+- Reuse the selected Codex or Claude Code host's MCP configuration and connect low-friction sources without storing a second auth registry.
 - Reject stale concurrent updates instead of silently overwriting them.
 
 ## Run it
@@ -28,9 +29,11 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173).
 
-## Use it with Codex or Claude Code
+## Local agent and CLI
 
-Start the coding agent in this repository and ask it to inspect or work on the field. `AGENTS.md` and `CLAUDE.md` explain the protocol. The core commands are:
+The API starts a single local worker. Canvas requests move through `queued`, `running`, `completed`, or `failed`; progress and the final response remain visible in Agent review. Codex is the default runtime. Set `FIELD_AGENT_PROVIDER=claude` before `npm run dev` to use Claude Code instead.
+
+`AGENTS.md` and `CLAUDE.md` explain the shared write protocol. The core diagnostic and manual fallback commands are:
 
 ```bash
 npm run field -- context
@@ -39,6 +42,8 @@ npm run field -- apply work/agent-ops.json
 ```
 
 Agents must use the CLI rather than editing workspace JSON directly. Every mutation is schema-validated, revision-checked, locked, and atomically written.
+
+The connector library reads the selected agent host: structured `codex mcp list --json` inventory for Codex, or known catalog entries via `claude mcp get` for Claude Code. Codex desktop, CLI, and IDE share Codex configuration; Claude subprocesses inherit Claude Code's user-scoped configuration. The app therefore does not maintain another connector registry. New OAuth connections are written to the selected host only after a user clicks Connect. Connected content becomes a canonical source snapshot with connector, resource, and retrieval provenance when the agent imports it.
 
 Your runtime workspace and imported assets live under gitignored `data/local/`. The checked-in `data/workspace.json` is only the blank public seed.
 
@@ -50,4 +55,4 @@ See [docs/product.md](docs/product.md), [docs/research-foundation.md](docs/resea
 
 ## Status
 
-Local-only, single-user prototype. Non-text extraction is queued for the coding-agent protocol; live agent streaming, collaboration, and hosted sync are deliberately deferred until the core thinking loop proves useful.
+Local-only, single-user prototype. Agent progress is durable but not token-streamed. Collaboration and hosted sync are deliberately deferred until the core thinking loop proves useful.

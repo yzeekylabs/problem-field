@@ -15,7 +15,7 @@ export function Sidebar({
   onSelectCard,
   onCopyRequestCommand,
 }: SidebarProps) {
-  const openRequests = workspace.agentRequests.filter((request) => request.status === "open");
+  const openRequests = workspace.agentRequests.filter((request) => request.status === "queued" || request.status === "running");
 
   return (
     <aside className="sidebar">

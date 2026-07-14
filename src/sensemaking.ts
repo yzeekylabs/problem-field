@@ -72,6 +72,18 @@ export type NextMove = {
 };
 
 export function getNextMove(workspace: Workspace): NextMove {
+  const activeRequests = workspace.agentRequests.filter((item) => item.status === "queued" || item.status === "running");
+  if (activeRequests.length > 0) {
+    const running = activeRequests.some((item) => item.status === "running");
+    return {
+      stage: workspace.project.activeStage,
+      title: running ? "The agent is working in the field" : "The next agent pass is queued",
+      detail: "Progress and any failure stay visible. Evidence writes through the same revision-checked field protocol.",
+      actionLabel: "View progress",
+      action: "review-proposals",
+    };
+  }
+
   const pendingProposals = workspace.agentProposals.filter((item) => item.status === "pending");
   if (pendingProposals.length > 0) {
     return {

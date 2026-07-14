@@ -10,11 +10,13 @@ import {
   type Edge,
   type NodeChange,
 } from "@xyflow/react";
-import { FileUp, Sparkles } from "lucide-react";
+import { FileUp, Plug } from "lucide-react";
 
 import { ApiError, getWorkspace, importSourceFile, postOperations } from "./api.ts";
 import { FieldDock } from "./components/FieldDock.tsx";
+import { ConnectorLibrary } from "./components/ConnectorLibrary.tsx";
 import { FieldCardNode, type FieldNode } from "./components/FieldCardNode.tsx";
+import { FieldLogo } from "./components/FieldLogo.tsx";
 import { FirstRun, type BootstrapInput } from "./components/FirstRun.tsx";
 import { Inspector } from "./components/Inspector.tsx";
 import { SourceModal } from "./components/SourceModal.tsx";
@@ -76,6 +78,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const [connectorLibraryOpen, setConnectorLibraryOpen] = useState(false);
   const [droppedFile, setDroppedFile] = useState<File | undefined>();
   const [dragActive, setDragActive] = useState(false);
 
@@ -266,7 +269,7 @@ export default function App() {
           scopeCardIds: selectedCardId ? [selectedCardId] : [],
         },
       }],
-      "Question queued for Codex or Claude Code",
+      "Agent queued — progress is visible in the review panel",
     );
   }
 
@@ -284,7 +287,7 @@ export default function App() {
   if (!workspace) {
     return (
       <main className="loading-screen">
-        <div className="loading-mark"><Sparkles aria-hidden="true" size={20} /></div>
+        <FieldLogo className="loading-mark" />
         <h1>Opening the field</h1>
         <p>{error ?? "Loading the canonical workspace…"}</p>
         {error && <button onClick={() => void load()} type="button">Try again</button>}
@@ -335,28 +338,31 @@ export default function App() {
           onPaneClick={() => setSelectedCardId(null)}
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#d7d9d3" gap={28} size={1} variant={BackgroundVariant.Dots} />
+          <Background color="#c9c6b8" gap={28} size={1} variant={BackgroundVariant.Dots} />
           <Controls position="bottom-right" showInteractive={false} />
         </ReactFlow>
 
         {workspace.project.onboardingComplete && (
           <>
             <header className="project-chip">
-              <div className="project-chip__mark"><Sparkles aria-hidden="true" size={15} /></div>
+              <FieldLogo className="project-chip__mark" />
               <div><strong>{workspace.project.name}</strong><span>{workspace.project.question}</span></div>
             </header>
 
-            <div className="field-summary" aria-label="Field composition">
-              <span><strong>{workspace.sources.length}</strong> sources</span>
-              <span><strong>{evidenceCount}</strong> evidence</span>
-              <span><strong>{patternCount}</strong> patterns</span>
-              <i className={busy ? "is-busy" : ""} title={busy ? "Saving" : `Saved locally · revision ${workspace.revision}`} />
-            </div>
+            {(workspace.sources.length > 0 || workspace.cards.length > 0) && (
+              <div className="field-summary" aria-label="Field composition">
+                <span><strong>{workspace.sources.length}</strong> sources</span>
+                <span><strong>{evidenceCount}</strong> evidence</span>
+                <span><strong>{patternCount}</strong> patterns</span>
+                <i className={busy ? "is-busy" : ""} title={busy ? "Saving" : `Saved locally · revision ${workspace.revision}`} />
+              </div>
+            )}
 
             <FieldDock
               busy={busy}
               onAddCard={addCard}
               onAddSource={() => openSourceModal()}
+              onOpenConnectors={() => setConnectorLibraryOpen(true)}
               onAsk={queueAgentRequest}
               onCopyRequestCommand={(requestId) => void copyRequestCommand(requestId)}
               onReviewProposal={(proposalId, decision) => void mutate([
@@ -378,12 +384,12 @@ export default function App() {
           <section className="canvas-empty" aria-labelledby="empty-field-title">
             <span>Empty field</span>
             <h2 id="empty-field-title">
-              {workspace.sources.length ? "Your sources are in. What happened inside them?" : "Start with something that happened."}
+              {workspace.sources.length ? "Begin with one clear moment." : "Start with something that happened."}
             </h2>
             <p>
               {workspace.sources.length
-                ? "Place one exact quote, behavior, or observable fact. Interpretation comes later."
-                : "Bring in a call, note, screenshot, recording, or document. The field will grow from inspectable evidence."}
+                ? "Place an exact quote, behavior, or observable fact. You can interpret it once the evidence is visible."
+                : "Bring in a call, note, screenshot, recording, or document. Build from evidence you can return to."}
             </p>
             <div>
               <button className="canvas-empty__primary" onClick={() => workspace.sources.length ? addCard("evidence") : openSourceModal()} type="button">
@@ -395,6 +401,11 @@ export default function App() {
                   type="button"
                 >
                   Ask agent to forage
+                </button>
+              )}
+              {workspace.sources.length === 0 && (
+                <button onClick={() => setConnectorLibraryOpen(true)} type="button">
+                  <Plug aria-hidden="true" size={15} /> Connect a workspace
                 </button>
               )}
             </div>
@@ -435,6 +446,11 @@ export default function App() {
           busy={busy}
           initialFile={droppedFile}
           onClose={() => { setSourceModalOpen(false); setDroppedFile(undefined); }}
+          onOpenConnectors={() => {
+            setSourceModalOpen(false);
+            setDroppedFile(undefined);
+            setConnectorLibraryOpen(true);
+          }}
           onCreate={async (source, file) => {
             if (file) await importFile(source, file);
             else await mutate([{ type: "addSource", source }], "Source added to the field");
@@ -443,6 +459,8 @@ export default function App() {
           }}
         />
       )}
+
+      {connectorLibraryOpen && <ConnectorLibrary onClose={() => setConnectorLibraryOpen(false)} />}
     </main>
   );
 }

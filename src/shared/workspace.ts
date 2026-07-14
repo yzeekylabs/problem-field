@@ -37,6 +37,14 @@ const extractionSchema = z.object({
   updatedAt: z.string().datetime().optional(),
 });
 
+const externalSourceRefSchema = z.object({
+  connectorId: idSchema,
+  resourceId: z.string().min(1).max(2_000),
+  url: z.string().url().max(4_000).optional(),
+  retrievedAt: z.string().datetime(),
+  version: z.string().max(500).optional(),
+});
+
 export const sourceSchema = z.object({
   id: idSchema,
   title: z.string().min(1).max(240),
@@ -44,6 +52,7 @@ export const sourceSchema = z.object({
   origin: z.string().max(2_000).optional(),
   summary: z.string().max(100_000).optional(),
   asset: sourceAssetSchema.optional(),
+  externalRef: externalSourceRefSchema.optional(),
   extraction: extractionSchema.optional(),
   importedAt: z.string().datetime(),
 });
@@ -83,10 +92,14 @@ export const agentRequestSchema = z.object({
   id: idSchema,
   prompt: z.string().min(1).max(10_000),
   scopeCardIds: z.array(idSchema),
-  status: z.enum(["open", "resolved"]),
+  status: z.enum(["queued", "running", "completed", "failed"]),
+  provider: z.enum(["codex", "claude"]).optional(),
+  runId: idSchema.optional(),
   response: z.string().max(20_000).optional(),
+  error: z.string().max(20_000).optional(),
   createdAt: z.string().datetime(),
-  resolvedAt: z.string().datetime().optional(),
+  startedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().optional(),
 });
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
 
@@ -108,7 +121,7 @@ export const agentProposalSchema = z.object({
 export type AgentProposal = z.infer<typeof agentProposalSchema>;
 
 export const workspaceSchema = z.object({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(3),
   revision: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
   project: z.object({
@@ -133,13 +146,22 @@ export function parseWorkspace(input: unknown): Workspace {
     ? candidate.project as Record<string, unknown>
     : null;
 
-  if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2) {
+  if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3) {
     candidate.agentProposals ??= [];
     if (project) {
       project.activeStage ??= project.status === "framing" ? "frame" : "forage";
       project.onboardingComplete ??= true;
     }
-    candidate.schemaVersion = 2;
+    const requests = Array.isArray(candidate.agentRequests)
+      ? candidate.agentRequests as Array<Record<string, unknown>>
+      : [];
+    for (const request of requests) {
+      if (request.status === "open") request.status = "queued";
+      if (request.status === "resolved") request.status = "completed";
+      if (request.resolvedAt && !request.finishedAt) request.finishedAt = request.resolvedAt;
+      delete request.resolvedAt;
+    }
+    candidate.schemaVersion = 3;
   }
 
   return workspaceSchema.parse(candidate);
@@ -188,12 +210,39 @@ export const operationSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("addAgentRequest"),
-    request: agentRequestSchema.omit({ createdAt: true, status: true }),
+    request: agentRequestSchema.omit({
+      createdAt: true,
+      status: true,
+      provider: true,
+      runId: true,
+      response: true,
+      error: true,
+      startedAt: true,
+      finishedAt: true,
+    }),
   }),
   z.object({
     type: z.literal("resolveAgentRequest"),
     requestId: idSchema,
     response: z.string().max(20_000),
+  }),
+  z.object({
+    type: z.literal("startAgentRequest"),
+    requestId: idSchema,
+    runId: idSchema,
+    provider: z.enum(["codex", "claude"]),
+  }),
+  z.object({
+    type: z.literal("finishAgentRequest"),
+    requestId: idSchema,
+    runId: idSchema,
+    outcome: z.enum(["completed", "failed"]),
+    response: z.string().max(20_000).optional(),
+    error: z.string().max(20_000).optional(),
+  }),
+  z.object({
+    type: z.literal("deleteAgentRequest"),
+    requestId: idSchema,
   }),
   z.object({
     type: z.literal("addAgentProposal"),
@@ -371,7 +420,7 @@ export function applyOperationSet(
         requireUniqueId(next.agentRequests, operation.request.id, "Agent request");
         next.agentRequests.push({
           ...operation.request,
-          status: "open",
+          status: "queued",
           createdAt: now,
         });
         break;
@@ -381,12 +430,56 @@ export function applyOperationSet(
         if (!request) {
           throw new DomainError(`Agent request '${operation.requestId}' does not exist.`);
         }
-        if (request.status === "resolved") {
-          throw new DomainError(`Agent request '${operation.requestId}' is already resolved.`);
+        if (request.status !== "queued") {
+          throw new DomainError(`Agent request '${operation.requestId}' cannot be resolved manually after a runner claims it.`);
         }
-        request.status = "resolved";
+        request.status = "completed";
         request.response = operation.response;
-        request.resolvedAt = now;
+        request.finishedAt = now;
+        break;
+      }
+      case "startAgentRequest": {
+        const request = next.agentRequests.find((item) => item.id === operation.requestId);
+        if (!request) {
+          throw new DomainError(`Agent request '${operation.requestId}' does not exist.`);
+        }
+        if (request.status !== "queued") {
+          throw new DomainError(`Agent request '${operation.requestId}' is not queued.`);
+        }
+        request.status = "running";
+        request.runId = operation.runId;
+        request.provider = operation.provider;
+        request.startedAt = now;
+        delete request.response;
+        delete request.error;
+        delete request.finishedAt;
+        break;
+      }
+      case "finishAgentRequest": {
+        const request = next.agentRequests.find((item) => item.id === operation.requestId);
+        if (!request) {
+          throw new DomainError(`Agent request '${operation.requestId}' does not exist.`);
+        }
+        if (request.status !== "running" || request.runId !== operation.runId) {
+          throw new DomainError(`Agent request '${operation.requestId}' is not owned by this run.`);
+        }
+        request.status = operation.outcome;
+        request.finishedAt = now;
+        if (operation.response) request.response = operation.response;
+        else delete request.response;
+        if (operation.error) request.error = operation.error;
+        else delete request.error;
+        break;
+      }
+      case "deleteAgentRequest": {
+        const request = next.agentRequests.find((item) => item.id === operation.requestId);
+        if (!request) {
+          throw new DomainError(`Agent request '${operation.requestId}' does not exist.`);
+        }
+        if (request.status === "queued" || request.status === "running") {
+          throw new DomainError(`Agent request '${operation.requestId}' is still active.`);
+        }
+        next.agentRequests = next.agentRequests.filter((item) => item.id !== operation.requestId);
         break;
       }
       case "addAgentProposal": {

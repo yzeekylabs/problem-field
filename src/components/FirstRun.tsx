@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { ArrowRight, File as FileIcon, FileUp, LockKeyhole, Sparkles, X } from "lucide-react";
+import { ArrowRight, File as FileIcon, FileUp, LockKeyhole, X } from "lucide-react";
+
+import { FieldLogo } from "./FieldLogo.tsx";
 
 export type BootstrapInput = {
   name: string;
@@ -35,13 +37,13 @@ export function FirstRun({ busy, onSubmit }: FirstRunProps) {
     <section className="first-run" aria-labelledby="first-run-title">
       <div className="first-run__panel">
         <header className="first-run__header">
-          <div className="first-run__mark"><Sparkles aria-hidden="true" size={18} /></div>
-          <span>Open a new problem field</span>
+          <FieldLogo className="first-run__mark" />
+          <span>Start a problem field</span>
         </header>
 
         <div className="first-run__intro">
           <h1 id="first-run-title">What are you trying to understand?</h1>
-          <p>Give the field a direction, then bring in whatever happened—calls, notes, screenshots, recordings, or documents. You can stay messy; the structure will emerge from the evidence.</p>
+          <p>Set a direction, then bring in the material you already have. The field can stay loose while the evidence finds a useful shape.</p>
         </div>
 
         <div className="first-run__fields">
@@ -89,7 +91,7 @@ export function FirstRun({ busy, onSubmit }: FirstRunProps) {
           }}
         >
           <FileUp aria-hidden="true" size={18} />
-          <span><strong>Drop starting material</strong><small>Text, image, PDF, audio, or video · 50 MB each</small></span>
+          <span><strong>Bring in what you have</strong><small>Text, image, PDF, audio, or video · 50 MB each</small></span>
           <label>
             Choose files
             <input
@@ -121,7 +123,7 @@ export function FirstRun({ busy, onSubmit }: FirstRunProps) {
         )}
 
         <footer className="first-run__footer">
-          <span><LockKeyhole aria-hidden="true" size={13} /> Your field and source files stay local and outside Git.</span>
+          <span><LockKeyhole aria-hidden="true" size={13} /> Your field stays on this device and outside Git.</span>
           <button
             disabled={busy || !question.trim()}
             onClick={() => void onSubmit({

@@ -11,7 +11,7 @@ const now = "2026-07-14T04:00:00.000Z";
 
 function workspace(): Workspace {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 2,
     updatedAt: now,
     project: {
@@ -51,7 +51,7 @@ describe("applyOperationSet", () => {
 
     const migrated = parseWorkspace(legacy);
 
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
     expect(migrated.project.activeStage).toBe("forage");
     expect(migrated.project.onboardingComplete).toBe(true);
     expect(migrated.agentProposals).toEqual([]);
@@ -260,5 +260,97 @@ describe("applyOperationSet", () => {
 
     expect(extracted.sources[0].asset?.originalName).toBe("whiteboard.png");
     expect(extracted.sources[0].extraction?.status).toBe("ready");
+  });
+
+  it("claims and finishes an agent request with one run owner", () => {
+    const queued = applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{
+        type: "addAgentRequest",
+        request: { id: "request-1", prompt: "Forage the sources", scopeCardIds: [] },
+      }],
+    });
+    expect(queued.agentRequests[0].status).toBe("queued");
+
+    const running = applyOperationSet(queued, {
+      baseRevision: 3,
+      actor: "system",
+      operations: [{
+        type: "startAgentRequest",
+        requestId: "request-1",
+        runId: "run-1",
+        provider: "codex",
+      }],
+    });
+    expect(running.agentRequests[0]).toMatchObject({ status: "running", runId: "run-1", provider: "codex" });
+    expect(() => applyOperationSet(running, {
+      baseRevision: 4,
+      actor: "agent",
+      operations: [{
+        type: "resolveAgentRequest",
+        requestId: "request-1",
+        response: "Tried to bypass the runner.",
+      }],
+    })).toThrow(DomainError);
+    expect(() => applyOperationSet(running, {
+      baseRevision: 4,
+      actor: "system",
+      operations: [{
+        type: "finishAgentRequest",
+        requestId: "request-1",
+        runId: "another-run",
+        outcome: "completed",
+      }],
+    })).toThrow(DomainError);
+
+    const completed = applyOperationSet(running, {
+      baseRevision: 4,
+      actor: "system",
+      operations: [{
+        type: "finishAgentRequest",
+        requestId: "request-1",
+        runId: "run-1",
+        outcome: "completed",
+        response: "Added grounded evidence.",
+      }],
+    });
+    expect(completed.agentRequests[0]).toMatchObject({ status: "completed", response: "Added grounded evidence." });
+  });
+
+  it("migrates legacy open and resolved request states", () => {
+    const legacy = structuredClone(workspace()) as unknown as Record<string, unknown>;
+    legacy.schemaVersion = 2;
+    legacy.agentRequests = [
+      { id: "open", prompt: "One", scopeCardIds: [], status: "open", createdAt: now },
+      { id: "done", prompt: "Two", scopeCardIds: [], status: "resolved", response: "Done", createdAt: now, resolvedAt: now },
+    ];
+    const migrated = parseWorkspace(legacy);
+    expect(migrated.agentRequests.map((request) => request.status)).toEqual(["queued", "completed"]);
+    expect(migrated.agentRequests[1].finishedAt).toBe(now);
+  });
+
+  it("preserves connector provenance on a canonical source snapshot", () => {
+    const result = applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "agent",
+      operations: [{
+        type: "addSource",
+        source: {
+          id: "source-linear",
+          title: "Customer request",
+          kind: "document",
+          summary: "A snapshot retrieved from Linear.",
+          externalRef: {
+            connectorId: "linear",
+            resourceId: "ENG-42",
+            url: "https://linear.app/example/issue/ENG-42",
+            retrievedAt: now,
+          },
+          importedAt: now,
+        },
+      }],
+    });
+    expect(result.sources[0].externalRef?.resourceId).toBe("ENG-42");
   });
 });

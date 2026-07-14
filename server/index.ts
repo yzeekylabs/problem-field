@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import { ZodError } from "zod";
 
 import { DomainError, operationSetSchema } from "../src/shared/workspace.ts";
+import { kickAgentRunner, startAgentRunner } from "./agent-runner.ts";
+import { connectConnector, getConnectorStates } from "./connectors.ts";
 import {
   readSourceAsset,
   readWorkspace,
@@ -21,6 +23,20 @@ app.get("/api/workspace", async (context) => {
   return context.json(await readWorkspace());
 });
 
+app.get("/api/connectors", async (context) => {
+  context.header("Cache-Control", "no-store");
+  return context.json(await getConnectorStates());
+});
+
+app.post("/api/connectors/:id/connect", async (context) => {
+  try {
+    return context.json(await connectConnector(context.req.param("id")));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The connector could not be started.";
+    return context.json({ error: "connector_failed", message }, 422);
+  }
+});
+
 app.get("/api/assets/:fileName", async (context) => {
   const fileName = context.req.param("fileName");
   const workspace = await readWorkspace();
@@ -37,6 +53,7 @@ app.post("/api/operations", async (context) => {
   try {
     const input = operationSetSchema.parse(await context.req.json());
     const workspace = await writeOperations(input);
+    kickAgentRunner();
     return context.json(workspace);
   } catch (error) {
     if (error instanceof RevisionConflictError) {
@@ -129,6 +146,7 @@ app.post("/api/sources/import", async (context) => {
 
     const input = operationSetSchema.parse({ baseRevision, actor: "human", operations });
     const workspace = await writeOperations(input);
+    kickAgentRunner();
     return context.json(workspace);
   } catch (error) {
     if (assetFileName) await removeSourceAsset(assetFileName);
@@ -150,6 +168,7 @@ app.post("/api/sources/import", async (context) => {
 });
 
 const port = Number(process.env.PORT ?? 8787);
+startAgentRunner();
 serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
   console.log(`Problem Field API listening on http://127.0.0.1:${info.port}`);
 });

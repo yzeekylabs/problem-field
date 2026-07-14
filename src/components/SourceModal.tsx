@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileUp, Plus, X } from "lucide-react";
+import { FileUp, Plug, Plus, X } from "lucide-react";
 
 import { inferSourceKind } from "../source-files.ts";
 import type { Source } from "../shared/workspace.ts";
@@ -8,10 +8,11 @@ type SourceModalProps = {
   busy: boolean;
   initialFile?: File;
   onClose: () => void;
+  onOpenConnectors: () => void;
   onCreate: (source: Source, file?: File) => Promise<void>;
 };
 
-export function SourceModal({ busy, initialFile, onClose, onCreate }: SourceModalProps) {
+export function SourceModal({ busy, initialFile, onClose, onCreate, onOpenConnectors }: SourceModalProps) {
   const [file, setFile] = useState<File | undefined>(initialFile);
   const [title, setTitle] = useState(initialFile?.name.replace(/\.[^.]+$/, "") ?? "");
   const [kind, setKind] = useState<Source["kind"]>(inferSourceKind(initialFile));
@@ -64,6 +65,11 @@ export function SourceModal({ busy, initialFile, onClose, onCreate }: SourceModa
         <p className="source-modal__intro">
           Raw material stays separate from the evidence and interpretations you place on the canvas. Files remain local in this repository.
         </p>
+
+        <button className="source-modal__connect" onClick={onOpenConnectors} type="button">
+          <Plug aria-hidden="true" size={16} />
+          <span><strong>Connect an existing workspace</strong><small>Linear, Notion, Figma, or Granola through Codex</small></span>
+        </button>
 
         <label className="file-drop">
           <FileUp aria-hidden="true" size={17} />

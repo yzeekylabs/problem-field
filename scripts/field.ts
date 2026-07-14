@@ -30,7 +30,10 @@ function formatContext(workspace: Workspace, requestId?: string) {
   for (const source of workspace.sources) {
     const extraction = source.extraction ? ` | extraction=${source.extraction.status}` : "";
     const asset = source.asset ? ` | asset=data/local/assets/${source.asset.fileName}` : "";
-    lines.push(`- [${source.id}] ${source.title} (${source.kind})${source.origin ? ` — ${source.origin}` : ""}${extraction}${asset}`);
+    const external = source.externalRef
+      ? ` | connector=${source.externalRef.connectorId} | resource=${source.externalRef.resourceId} | retrieved=${source.externalRef.retrievedAt}`
+      : "";
+    lines.push(`- [${source.id}] ${source.title} (${source.kind})${source.origin ? ` — ${source.origin}` : ""}${extraction}${asset}${external}`);
   }
 
   lines.push("", "## Cards");
@@ -52,12 +55,12 @@ function formatContext(workspace: Workspace, requestId?: string) {
     );
   }
 
-  const openRequests = workspace.agentRequests.filter((request) => request.status === "open");
-  lines.push("", "## Open agent requests");
-  if (openRequests.length === 0) lines.push("- None");
-  for (const request of openRequests) {
+  const activeRequests = workspace.agentRequests.filter((request) => request.status === "queued" || request.status === "running");
+  lines.push("", "## Active agent requests");
+  if (activeRequests.length === 0) lines.push("- None");
+  for (const request of activeRequests) {
     lines.push(
-      `- [${request.id}] ${request.prompt}${request.scopeCardIds.length ? ` | scope=${request.scopeCardIds.join(",")}` : " | scope=whole field"}`,
+      `- [${request.id}] status=${request.status}${request.provider ? ` provider=${request.provider}` : ""} | ${request.prompt}${request.scopeCardIds.length ? ` | scope=${request.scopeCardIds.join(",")}` : " | scope=whole field"}`,
     );
   }
 
@@ -113,7 +116,7 @@ async function main() {
     const workspace = await readWorkspace();
     console.log(
       JSON.stringify(
-        { revision: workspace.revision, requests: workspace.agentRequests.filter((item) => item.status === "open") },
+        { revision: workspace.revision, requests: workspace.agentRequests.filter((item) => item.status === "queued" || item.status === "running") },
         null,
         2,
       ),

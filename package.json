@@ -20,6 +20,8 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.8",
+    "@fontsource-variable/newsreader": "^5.2.10",
     "@hono/node-server": "latest",
     "@xyflow/react": "latest",
     "hono": "latest",

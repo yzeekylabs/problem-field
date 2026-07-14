@@ -53,6 +53,8 @@ npm run field -- context
 
 Use `addCard` for mechanical or user-directed canonical edits. Use `addAgentProposal` for new agent interpretations. Multimodal extraction updates a source with `updateSource`; it must report failure or uncertainty rather than invent content.
 
-Supported operations are `updateProject`, `addCard`, `updateCard`, `moveCards`, `deleteCard`, `addConnection`, `deleteConnection`, `addSource`, `updateSource`, `addAgentRequest`, `resolveAgentRequest`, `addAgentProposal`, and `reviewAgentProposal`.
+Supported content operations are `updateProject`, `addCard`, `updateCard`, `moveCards`, `deleteCard`, `addConnection`, `deleteConnection`, `addSource`, `updateSource`, `addAgentRequest`, `resolveAgentRequest`, `deleteAgentRequest`, `addAgentProposal`, and `reviewAgentProposal`. `startAgentRequest` and `finishAgentRequest` are reserved for the local runner, which enforces run ownership. Only finished requests can be deleted.
+
+For material retrieved through MCP, create a stable source snapshot and include an `externalRef` with `connectorId`, `resourceId`, `retrievedAt`, and optional `url` or `version`. Evidence then points to that source snapshot. Do not treat an agent transcript or an unrecorded live MCP result as field truth.
 
 Malformed operations, invalid references, duplicate IDs, and stale revisions fail without changing the field.

@@ -7,7 +7,7 @@ const now = "2026-07-14T04:00:00.000Z";
 
 function field(): Workspace {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: 0,
     updatedAt: now,
     project: {
