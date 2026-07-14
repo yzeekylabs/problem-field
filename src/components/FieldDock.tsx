@@ -170,7 +170,7 @@ export function FieldDock({
               </button>
               <button onClick={onOpenConnectors} type="button">
                 <Plug aria-hidden="true" size={18} />
-                <span><strong>Connected source</strong><small>Linear, Notion, Figma, or Granola</small></span>
+                <span><strong>Connected source</strong><small>Linear, Notion, Figma, Granola, or PostHog</small></span>
               </button>
               {addOptions.map(({ kind, label, description, icon: Icon }) => (
                 <button key={kind} onClick={() => onAddCard(kind)} type="button">

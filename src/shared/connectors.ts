@@ -1,4 +1,4 @@
-export type ConnectorId = "linear" | "notion" | "figma" | "granola";
+export type ConnectorId = "linear" | "notion" | "figma" | "granola" | "posthog";
 
 export type ConnectorDefinition = {
   id: ConnectorId;
@@ -41,6 +41,14 @@ export const connectorCatalog: ConnectorDefinition[] = [
     content: "Conversations and calls",
     domain: "granola.ai",
     endpoint: "https://mcp.granola.ai/mcp",
+  },
+  {
+    id: "posthog",
+    name: "PostHog",
+    description: "Analytics, funnels, experiments, surveys, and product usage.",
+    content: "Product behavior and signal",
+    domain: "posthog.com",
+    endpoint: "https://mcp.posthog.com/mcp?readonly=true",
   },
 ];
 

@@ -8,6 +8,7 @@ The first connector library optimizes for a narrow promise: a normal user can ad
 - **Notion** — official hosted endpoint `https://mcp.notion.com/mcp`, with no integration infrastructure required.
 - **Granola** — official remote endpoint `https://mcp.granola.ai/mcp`, browser authentication.
 - **Figma** — official remote endpoint `https://mcp.figma.com/mcp`. Figma limits the server to catalogued MCP clients, but its current setup guide explicitly supports Codex and documents the same `codex mcp add` route used here. This is different from becoming a verified partner connector inside Figma Make.
+- **PostHog** — official hosted endpoint `https://mcp.posthog.com/mcp`, browser OAuth, explicit Codex and Claude support. The library uses `?readonly=true` so agents can inspect analytics, experiments, surveys, and product behavior without changing the PostHog project.
 
 ## Omitted for now
 
@@ -20,4 +21,4 @@ The library reads the selected host's MCP inventory and authentication state. Co
 
 Inventory is cheap and local. Content discovery is different: learning what a source contains requires MCP tool calls, network access, permissions, and source-specific search behavior. The app therefore does not crawl every connection when the modal opens. A user request launches a bounded agent pass, and only selected material enters the field as a provenance-stamped source snapshot.
 
-Official references: [Linear MCP](https://linear.app/docs/mcp), [Notion MCP](https://developers.notion.com/guides/mcp/get-started-with-mcp), [Granola MCP](https://help.granola.ai/article/granola-mcp), [Figma remote setup](https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/), [Slack MCP](https://docs.slack.dev/ai/slack-mcp-server/), and [Google Workspace MCP configuration](https://developers.google.com/workspace/guides/configure-mcp-servers).
+Official references: [Linear MCP](https://linear.app/docs/mcp), [Notion MCP](https://developers.notion.com/guides/mcp/get-started-with-mcp), [Granola MCP](https://help.granola.ai/article/granola-mcp), [Figma remote setup](https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/), [PostHog MCP](https://posthog.com/docs/model-context-protocol), [Slack MCP](https://docs.slack.dev/ai/slack-mcp-server/), and [Google Workspace MCP configuration](https://developers.google.com/workspace/guides/configure-mcp-servers).

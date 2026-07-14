@@ -68,7 +68,7 @@ export function SourceModal({ busy, initialFile, onClose, onCreate, onOpenConnec
 
         <button className="source-modal__connect" onClick={onOpenConnectors} type="button">
           <Plug aria-hidden="true" size={16} />
-          <span><strong>Connect an existing workspace</strong><small>Linear, Notion, Figma, or Granola through Codex</small></span>
+          <span><strong>Connect an existing workspace</strong><small>Linear, Notion, Figma, Granola, or PostHog through Codex</small></span>
         </button>
 
         <label className="file-drop">

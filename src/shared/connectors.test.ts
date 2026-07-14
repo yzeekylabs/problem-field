@@ -8,6 +8,7 @@ describe("connector catalog", () => {
     for (const connector of connectorCatalog) {
       expect(connector.endpoint).toMatch(/^https:\/\//);
     }
-    expect(connectorCatalog.map((connector) => connector.id)).toEqual(["linear", "notion", "figma", "granola"]);
+    expect(connectorCatalog.map((connector) => connector.id)).toEqual(["linear", "notion", "figma", "granola", "posthog"]);
+    expect(connectorCatalog.find((connector) => connector.id === "posthog")?.endpoint).toContain("readonly=true");
   });
 });

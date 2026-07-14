@@ -449,6 +449,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .connector-ready .connector-mark img { inset: 4px; width: 15px; height: 15px; }
 .connector-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .connector-card { display: grid; grid-template-rows: auto minmax(34px, auto) auto auto; gap: 8px; padding: 14px; border: 1px solid #ded9cc; border-radius: 14px; background: #fbfaf4; }
+.connector-card:last-child:nth-child(odd) { grid-column: 1 / -1; width: calc(50% - 4.5px); justify-self: center; }
 .connector-card__heading { display: flex; align-items: center; gap: 10px; }
 .connector-card__heading > div { display: grid; gap: 2px; }
 .connector-card__heading strong { font-size: 11px; font-weight: 650; }
@@ -501,6 +502,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .add-grid { grid-template-columns: 1fr; max-height: 340px; overflow-y: auto; }
   .source-modal__row { grid-template-columns: 1fr; }
   .connector-grid { grid-template-columns: 1fr; }
+  .connector-card:last-child:nth-child(odd) { grid-column: auto; width: 100%; }
   .connector-ready { align-items: flex-start; flex-direction: column; }
   .connector-ready > div { justify-content: flex-start; }
   .react-flow__controls { display: none; }
