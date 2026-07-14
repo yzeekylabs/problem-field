@@ -4,6 +4,7 @@ import { Bot, ExternalLink, Save, Trash2, X } from "lucide-react";
 import type {
   CriterionLinkInput,
   DecisionFrame,
+  EvidenceAttributionInput,
   FieldCard,
   Source,
 } from "../shared/workspace.ts";
@@ -24,6 +25,7 @@ type InspectorProps = {
     body: string,
     sourceRef?: FieldCard["sourceRef"] | null,
     criterionLinks?: CriterionLinkInput[],
+    evidenceAttribution?: EvidenceAttributionInput | null,
   ) => void;
 };
 
@@ -70,6 +72,10 @@ function InspectorForm({
   const [criterionStances, setCriterionStances] = useState<Record<string, CriterionLinkInput["stance"] | "">>(
     () => Object.fromEntries(criterionLinks.map((link) => [link.criterionId, link.stance])),
   );
+  const [attributionRole, setAttributionRole] = useState<EvidenceAttributionInput["role"] | "">(
+    card.evidenceAttribution?.role ?? "",
+  );
+  const [speakerLabel, setSpeakerLabel] = useState(card.sourceRef?.speakerLabel ?? "");
 
   const source = sources.find((item) => item.id === sourceId);
   const sourceRef = sourceId
@@ -77,9 +83,23 @@ function InspectorForm({
         sourceId,
         ...(locator.trim() ? { locator: locator.trim() } : {}),
         ...(quote.trim() ? { quote: quote.trim() } : {}),
+        ...(speakerLabel.trim() ? { speakerLabel: speakerLabel.trim() } : {}),
       }
     : null;
-  const originalSourceRef = card.sourceRef ?? null;
+  const originalSourceRef = card.sourceRef
+    ? {
+        sourceId: card.sourceRef.sourceId,
+        ...(card.sourceRef.locator ? { locator: card.sourceRef.locator } : {}),
+        ...(card.sourceRef.quote ? { quote: card.sourceRef.quote } : {}),
+        ...(card.sourceRef.speakerLabel ? { speakerLabel: card.sourceRef.speakerLabel } : {}),
+      }
+    : null;
+  const evidenceAttribution: EvidenceAttributionInput | null = attributionRole
+    ? { role: attributionRole }
+    : null;
+  const originalEvidenceAttribution: EvidenceAttributionInput | null = card.evidenceAttribution
+    ? { role: card.evidenceAttribution.role }
+    : null;
   const nextCriterionLinks = activeDecisionFrame?.criteria.flatMap((criterion) => {
     const stance = criterionStances[criterion.id];
     return stance ? [{ criterionId: criterion.id, stance }] : [];
@@ -89,7 +109,8 @@ function InspectorForm({
     title !== card.title ||
     body !== card.body ||
     JSON.stringify(sourceRef) !== JSON.stringify(originalSourceRef) ||
-    JSON.stringify(nextCriterionLinks) !== JSON.stringify(criterionLinks);
+    JSON.stringify(nextCriterionLinks) !== JSON.stringify(criterionLinks) ||
+    (card.kind === "evidence" && JSON.stringify(evidenceAttribution) !== JSON.stringify(originalEvidenceAttribution));
 
   return (
     <aside className="inspector">
@@ -120,6 +141,7 @@ function InspectorForm({
             {signal.status === "emerging" && "The pattern crosses sources. Keep testing consequences, segment concentration, and alternatives."}
             {signal.status === "grounded" && "The field contains repeated, cross-source support. This is still an interpretation, not statistical proof."}
             {signal.status === "contested" && "Contrary material is attached. Compare explanations instead of averaging the disagreement away."}
+            {signal.status === "unreviewed" && "Connected material is still unreviewed, mixed, or research-team context. Confirm participant or external evidence before reading signal."}
           </p>
         </section>
       )}
@@ -160,6 +182,13 @@ function InspectorForm({
             <>
               <h3>{source.title}</h3>
               <p>{source.origin}</p>
+              <label className="field-label" htmlFor="evidence-speaker-label">Diarized speaker <small>optional</small></label>
+              <input
+                id="evidence-speaker-label"
+                onChange={(event) => setSpeakerLabel(event.target.value)}
+                placeholder="e.g. Naomi or SPEAKER_01"
+                value={speakerLabel}
+              />
               <label className="field-label" htmlFor="evidence-locator">Where in the source?</label>
               <input
                 id="evidence-locator"
@@ -183,6 +212,28 @@ function InspectorForm({
           ) : (
             <p className="warning-text">This evidence is not linked to a source yet.</p>
           )}
+        </section>
+      )}
+
+      {card.kind === "evidence" && (
+        <section className="evidence-attribution">
+          <div className="section-label">Evidence attribution</div>
+          <p>Confirm who supplied this excerpt. Diarization can identify a speaker label; it does not establish whether that speaker is the participant or research team.</p>
+          <label className="field-label" htmlFor="evidence-attribution-role">Whose voice or material?</label>
+          <select
+            id="evidence-attribution-role"
+            onChange={(event) => setAttributionRole(event.target.value as EvidenceAttributionInput["role"] | "")}
+            value={attributionRole}
+          >
+            <option value="">Not reviewed</option>
+            <option value="participant">Participant or customer</option>
+            <option value="research_team">Research team or interviewer</option>
+            <option value="mixed_exchange">Mixed exchange</option>
+            <option value="external_artifact">External artifact or behavioral record</option>
+          </select>
+          {!attributionRole && <small className="attribution-note">This card can stay in the field, but it will not influence signal or the current read until attribution is reviewed.</small>}
+          {attributionRole === "research_team" && <small className="attribution-note">Research-team speech remains inspectable context and is excluded from directional signal.</small>}
+          {attributionRole === "mixed_exchange" && <small className="attribution-note">Keep the exchange for context, then cut a participant-only excerpt before using it as directional evidence.</small>}
         </section>
       )}
 
@@ -227,6 +278,7 @@ function InspectorForm({
             body,
             card.kind === "evidence" ? sourceRef : undefined,
             nextCriterionLinks,
+            card.kind === "evidence" ? evidenceAttribution : undefined,
           )}
           type="button"
         >

@@ -162,7 +162,7 @@ app.post("/api/sources/import", async (context) => {
               type: "addAgentRequest" as const,
               request: {
                 id: `request-${crypto.randomUUID()}`,
-                prompt: `Inspect ${`data/local/assets/${assetFileName}`} for source '${sourceId}'. Extract usable text or describe the observable material without inventing content. Update the source summary and extraction state through the field CLI; do not create insights unless separately requested.`,
+                prompt: `Inspect ${`data/local/assets/${assetFileName}`} for source '${sourceId}'. Extract usable text or describe the observable material without inventing content. For calls, preserve diarized speaker labels and turns, keep interviewer or research-team speech distinct from participant speech, and do not infer a person's role from a generic speaker label. Update the source summary and extraction state through the field CLI; do not set evidence attribution or create insights unless separately requested.`,
                 scopeCardIds: [],
               },
             },

@@ -56,10 +56,13 @@ function formatContext(workspace: Workspace, requestId?: string) {
   lines.push("", "## Cards");
   for (const card of workspace.cards) {
     const source = card.sourceRef
-      ? ` | source=${card.sourceRef.sourceId}${card.sourceRef.locator ? ` @ ${card.sourceRef.locator}` : ""}`
+      ? ` | source=${card.sourceRef.sourceId}${card.sourceRef.locator ? ` @ ${card.sourceRef.locator}` : ""}${card.sourceRef.speakerLabel ? ` | diarized-speaker=${card.sourceRef.speakerLabel}` : ""}`
+      : "";
+    const attribution = card.kind === "evidence"
+      ? ` | evidence-role=${card.evidenceAttribution?.role ?? "unreviewed"}${card.evidenceAttribution ? " | role-confirmed=human" : ""}`
       : "";
     lines.push(
-      `- [${card.id}] ${card.kind.toUpperCase()} — ${card.title} | position=(${card.position.x}, ${card.position.y}) | by=${card.createdBy}${source}`,
+      `- [${card.id}] ${card.kind.toUpperCase()} — ${card.title} | position=(${card.position.x}, ${card.position.y}) | by=${card.createdBy}${source}${attribution}`,
     );
     if (card.body) lines.push(`  ${card.body.replaceAll("\n", " ")}`);
     if (card.display) lines.push(`  Visual copy: ${card.display.title} — ${card.display.summary}`);
@@ -107,7 +110,7 @@ function formatContext(workspace: Workspace, requestId?: string) {
   lines.push(
     "",
     "## Write protocol",
-    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit workspace JSON directly. Use addAgentProposal for new interpretations. Keep full content intact; add display copy (title <= 60 characters, summary <= 120 characters) for concise visual surfaces. The agent may inspect and critique the decision frame, source research context, and accepted criterion links, but must never write setDecisionFrame, setSourceResearchQuality, or setCriterionLinksForCard operations.`,
+    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit workspace JSON directly. Use addAgentProposal for new interpretations. Keep full content intact; add display copy (title <= 60 characters, summary <= 120 characters) for concise visual surfaces. Preserve diarized speaker labels in sourceRef.speakerLabel, but never infer a participant/research-team role from the label. The agent may inspect and critique the decision frame, source research context, evidence attribution, and accepted criterion links, but must never write setDecisionFrame, setSourceResearchQuality, setEvidenceAttribution, or setCriterionLinksForCard operations.`,
   );
 
   return lines.join("\n");

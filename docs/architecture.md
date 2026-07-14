@@ -2,7 +2,7 @@
 
 ## One runtime truth
 
-`data/local/workspace.json` is the canonical runtime record. It contains the project focus, versioned decision frames, human-accepted evidence links, source research context, loop stage, sources, cards, relationships, canvas positions, agent requests, and agent proposals. The browser canvas and CLI are projections over the same model.
+`data/local/workspace.json` is the canonical runtime record. It contains the project focus, versioned decision frames, human-accepted evidence links, source research context, human-reviewed evidence attribution, loop stage, sources, cards, relationships, canvas positions, agent requests, and agent proposals. The browser canvas and CLI are projections over the same model.
 
 `data/workspace.json` is only the checked-in empty seed. On first run it is copied into the gitignored local data root. This prevents real calls, screenshots, and transcripts from becoming ordinary public-repo changes.
 
@@ -33,10 +33,11 @@ human research context    decision frame + links            critique + cited sug
 - Raw assets live under `data/local/assets/` and remain separate from derived extraction.
 - External material becomes a source snapshot with connector, resource, and retrieval provenance; the live MCP response is not another workspace store.
 - Evidence points back to a source and optional exact locator/quote.
+- A diarized speaker label is source-excerpt metadata. Participant, research-team, mixed-exchange, or external-artifact role is a separate human-reviewed attribution on the evidence card.
 - Agent interpretations do not enter the field until a person accepts them.
 - Decision frames are append-only versions created by a person. Editing a criterion invalidates its accepted evidence links; unchanged criteria retain theirs.
 - Transcript fidelity and session-evidence context stay on the source. They describe the decision basis, not the participant or researcher.
-- The current read is a pure projection over the active frame, human-accepted links, source provenance, and source context. It is never stored as an AI verdict.
+- The current read is a pure projection over the active frame, human-accepted links, participant/external evidence, source provenance, and source context. Research-team speech remains visible but is excluded from direction; mixed or unreviewed attribution holds the basis back. The read is never stored as an AI verdict.
 
 This is the core split-brain defense: AI conversation state, visual layout state, and source extraction state never become competing stores of meaning.
 
@@ -59,7 +60,9 @@ Execution activity is a fourth, explicitly non-canonical lane. The runner writes
 - Writes fail closed when `baseRevision` is stale.
 - Connections and proposal scopes cannot reference missing cards.
 - Evidence cannot reference a missing source.
-- Decision frames, source research context, and evidence-to-criterion links reject non-human writers.
+- Decision frames, source research context, evidence attribution, and evidence-to-criterion links reject non-human writers.
+- A diarized speaker label never implies participant or research-team role.
+- Research-team speech and mixed or unreviewed exchanges cannot carry directional signal.
 - Open questions cannot count as decision evidence.
 - A current direction cannot be shown when accepted links do not resolve to inspectable sources.
 - Agent proposals carry explicit proposed cards and connections; acceptance is one validated operation.
@@ -88,4 +91,4 @@ An MCP connection grants the agent a route to retrieve context. It does not auto
 
 The file store is intentionally sufficient for a local, single-user test. When collaboration or query volume requires it, the operation contract can sit over SQLite/event history and then a hosted service. The migration boundary is storage, not the product ontology.
 
-The parser migrates schema-v1 through schema-v4 workspaces into schema v5 in memory, including the durable request lifecycle, optional visual-copy projection, empty decision-frame history, and empty criterion links. Existing fields are marked as already onboarded, so an upgrade preserves their cards and does not replay first run. They receive a calm “Set evidence bar” next move rather than a fabricated frame inferred from old content.
+The parser migrates schema-v1 through schema-v6 workspaces into schema v6 in memory, including the durable request lifecycle, optional visual-copy projection, empty decision-frame history, empty criterion links, and optional evidence attribution. Existing evidence remains intact but begins unreviewed; migration never guesses whether a historical speaker was a participant or the research team. Existing fields remain onboarded and receive contextual next moves instead of replaying first run.

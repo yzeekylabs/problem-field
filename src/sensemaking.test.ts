@@ -7,7 +7,7 @@ const now = "2026-07-14T04:00:00.000Z";
 
 function field(): Workspace {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     revision: 0,
     updatedAt: now,
     project: {
@@ -22,8 +22,8 @@ function field(): Workspace {
       { id: "s2", title: "Call two", kind: "transcript", importedAt: now },
     ],
     cards: [
-      { id: "e1", kind: "evidence", title: "E1", body: "", position: { x: 0, y: 0 }, sourceRef: { sourceId: "s1" }, createdBy: "human", createdAt: now, updatedAt: now },
-      { id: "e2", kind: "evidence", title: "E2", body: "", position: { x: 0, y: 0 }, sourceRef: { sourceId: "s2" }, createdBy: "human", createdAt: now, updatedAt: now },
+      { id: "e1", kind: "evidence", title: "E1", body: "", position: { x: 0, y: 0 }, sourceRef: { sourceId: "s1", speakerLabel: "SPEAKER_01" }, evidenceAttribution: { role: "participant", confirmedBy: "human", updatedAt: now }, createdBy: "human", createdAt: now, updatedAt: now },
+      { id: "e2", kind: "evidence", title: "E2", body: "", position: { x: 0, y: 0 }, sourceRef: { sourceId: "s2", speakerLabel: "SPEAKER_02" }, evidenceAttribution: { role: "participant", confirmedBy: "human", updatedAt: now }, createdBy: "human", createdAt: now, updatedAt: now },
       { id: "o1", kind: "observation", title: "O1", body: "", position: { x: 0, y: 0 }, createdBy: "human", createdAt: now, updatedAt: now },
       { id: "p1", kind: "pattern", title: "P1", body: "", position: { x: 0, y: 0 }, createdBy: "human", createdAt: now, updatedAt: now },
     ],
@@ -61,6 +61,8 @@ describe("sensemaking guidance", () => {
       evidenceCount: 2,
       sourceCount: 2,
       contradictionCount: 1,
+      attributionPendingCount: 0,
+      researchContextCount: 0,
       status: "contested",
     });
   });
@@ -149,6 +151,62 @@ describe("sensemaking guidance", () => {
     expect(getDecisionReadout(workspace)).toMatchObject({
       status: "leaning_continue",
       basis: "considered",
+    });
+  });
+
+  it("keeps research-team speech as context instead of directional evidence", () => {
+    const workspace = withDecisionFrame();
+    workspace.cards[0].evidenceAttribution = { role: "research_team", confirmedBy: "human", updatedAt: now };
+    workspace.cards[1].evidenceAttribution = { role: "research_team", confirmedBy: "human", updatedAt: now };
+    workspace.criterionLinks = [
+      { cardId: "e1", criterionId: "continue-1", stance: "supports", createdBy: "human", updatedAt: now },
+      { cardId: "e2", criterionId: "reconsider-1", stance: "challenges", createdBy: "human", updatedAt: now },
+    ];
+
+    expect(getDecisionReadout(workspace)).toMatchObject({
+      status: "too_early",
+      basis: "limited",
+      sourceCount: 0,
+      attributionPendingCount: 0,
+      researchContextCount: 2,
+      summary: expect.stringContaining("Research-team speech"),
+    });
+  });
+
+  it("holds mixed or unreviewed voices out of the read until a person resolves them", () => {
+    const workspace = withDecisionFrame();
+    delete workspace.cards[0].evidenceAttribution;
+    workspace.cards[1].evidenceAttribution = { role: "mixed_exchange", confirmedBy: "human", updatedAt: now };
+    workspace.criterionLinks = [
+      { cardId: "e1", criterionId: "continue-1", stance: "supports", createdBy: "human", updatedAt: now },
+      { cardId: "e2", criterionId: "reconsider-1", stance: "challenges", createdBy: "human", updatedAt: now },
+    ];
+
+    expect(getDecisionReadout(workspace)).toMatchObject({
+      status: "too_early",
+      basis: "limited",
+      sourceCount: 0,
+      attributionPendingCount: 2,
+      summary: expect.stringContaining("unreviewed or mixed attribution"),
+    });
+    expect(getPatternSignal(workspace, "p1")).toMatchObject({
+      status: "unreviewed",
+      evidenceCount: 0,
+      contradictionCount: 0,
+      attributionPendingCount: 2,
+    });
+  });
+
+  it("sends a brownfield with only unresolved evidence to human attribution review", () => {
+    const workspace = withDecisionFrame();
+    for (const card of workspace.cards) {
+      if (card.kind === "evidence") delete card.evidenceAttribution;
+    }
+
+    expect(getNextMove(workspace)).toMatchObject({
+      stage: "forage",
+      action: "review-attribution",
+      cardId: "e1",
     });
   });
 });

@@ -23,6 +23,8 @@ Before foraging, the user agrees a compact **decision frame**: the decision this
 
 - **Source** is the original material.
 - **Evidence** is something inspectable in a source.
+- **Diarized speaker** is a source label, not proof of the person's role.
+- **Evidence attribution** is the human-reviewed distinction between participant voice, research-team context, a mixed exchange, and an external artifact.
 - **Observation** is what someone notices in evidence.
 - **Pattern** is an interpretation across evidence or observations.
 - **Question** marks uncertainty, contradiction, or a missing test.
@@ -36,7 +38,7 @@ The product never silently promotes one layer into another.
 
 A pattern shows its evidence composition: supporting evidence, independent source breadth, and contrary material. Labels such as `seed`, `emerging`, `grounded`, and `contested` are navigational interpretations—not probabilities or statistical proof.
 
-At field level, the product can say `too early to call`, `mixed`, `leaning continue`, or `leaning reconsider`. It also shows an ordinal confidence **basis**—`limited`, `developing`, or `considered`—derived from criterion coverage, inspectable source breadth, counter-signal, and human-recorded source caveats. It never exposes model confidence, a magic percentage, or an autonomous go/no-go.
+At field level, the product can say `too early to call`, `mixed`, `leaning continue`, or `leaning reconsider`. It also shows an ordinal confidence **basis**—`limited`, `developing`, or `considered`—derived from criterion coverage, inspectable source breadth, counter-signal, participant/external attribution, and human-recorded source caveats. Research-team statements stay available as context but do not support a direction. Mixed or unresolved excerpts do not carry signal until a person reviews or recuts them. The product never exposes model confidence, a magic percentage, or an autonomous go/no-go.
 
 The agent augments the judgment by finding relevant evidence, challenging criteria, identifying competing explanations, and flagging source caveats with citations. Only the user can change the frame, record source context, accept evidence links, or act on the read.
 

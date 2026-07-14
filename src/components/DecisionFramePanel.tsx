@@ -27,10 +27,24 @@ function initialCriteria(criteria: DecisionCriterion[], polarity: DecisionCriter
 }
 
 function criterionMeta(read: DecisionReadout["criterionReads"][number]) {
-  if (read.status === "untested") return "No accepted evidence";
-  if (read.status === "mixed") return `${read.supportCount} support · ${read.challengeCount} challenge`;
-  if (read.status === "supported") return `${read.supportCount} support · ${read.sourceCount} ${read.sourceCount === 1 ? "source" : "sources"}`;
-  return `${read.challengeCount} challenge · ${read.sourceCount} ${read.sourceCount === 1 ? "source" : "sources"}`;
+  let primary: string;
+  if (read.status === "untested") primary = "No qualifying evidence";
+  else if (read.status === "mixed") primary = `${read.supportCount} support · ${read.challengeCount} challenge`;
+  else if (read.status === "supported") primary = `${read.supportCount} support · ${read.sourceCount} ${read.sourceCount === 1 ? "source" : "sources"}`;
+  else primary = `${read.challengeCount} challenge · ${read.sourceCount} ${read.sourceCount === 1 ? "source" : "sources"}`;
+
+  const caveats = [
+    read.attributionPendingCount > 0
+      ? `${read.attributionPendingCount} ${read.attributionPendingCount === 1 ? "attribution" : "attributions"} to review`
+      : null,
+    read.researchContextCount > 0
+      ? `${read.researchContextCount} research ${read.researchContextCount === 1 ? "context" : "contexts"} excluded`
+      : null,
+    read.unqualifiedLinkCount > 0 && read.attributionPendingCount === 0 && read.researchContextCount === 0
+      ? `${read.unqualifiedLinkCount} ${read.unqualifiedLinkCount === 1 ? "link lacks" : "links lack"} participant or external evidence`
+      : null,
+  ].filter(Boolean);
+  return [primary, ...caveats].join(" · ");
 }
 
 export function DecisionFramePanel(props: DecisionFramePanelProps) {

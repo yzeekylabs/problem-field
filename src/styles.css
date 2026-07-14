@@ -158,6 +158,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .field-card p { margin: 8px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.52; }
 .field-card footer { margin: 13px -17px -15px; padding: 9px 17px 10px; overflow: hidden; border-top: 1px solid rgba(91, 91, 78, .1); border-radius: 0 0 14px 14px; color: #806f52; background: rgba(120, 108, 83, .025); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .field-card footer.needs-source { color: var(--danger); }
+.field-card footer .evidence-attribution-tag { margin-right: 6px; color: #667361; font-weight: 650; }
+.field-card footer .evidence-attribution-tag--research_team { color: #707572; }
+.field-card footer .evidence-attribution-tag--mixed_exchange,
+.field-card footer .evidence-attribution-tag--unreviewed { color: #98633f; }
 .field-card footer.pattern-signal { color: #716e6b; }
 .field-card footer.pattern-signal span { margin-right: 7px; color: #665a72; font-weight: 650; text-transform: capitalize; }
 .field-handle { width: 9px !important; height: 9px !important; border: 2px solid var(--paper) !important; background: var(--card-accent) !important; opacity: 0; transition: opacity 120ms ease; }
@@ -428,6 +432,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .signal-panel > div strong { display: block; color: #373638; font-family: var(--display); font-size: 17px; font-weight: 520; }
 .signal-panel p { margin: 9px 0 0; color: #747174; font-size: 8px; line-height: 1.5; }
 .field-label { display: block; margin: 13px 0 6px; color: #7b8178; font-size: 8px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.field-label small { font-size: inherit; font-weight: 500; letter-spacing: 0; text-transform: none; }
 .inspector input, .inspector textarea, .inspector select { width: 100%; border: 1px solid #d8d3c6; border-radius: 9px; color: var(--ink); background: #fffef9; }
 .inspector input { padding: 10px 11px; font-family: var(--display); font-size: 16px; font-weight: 520; }
 .inspector textarea { padding: 10px 11px; resize: vertical; font-size: 10px; line-height: 1.55; }
@@ -437,6 +442,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .provenance h3 { margin: 8px 0 3px; font-size: 11px; font-weight: 650; }
 .provenance p { margin: 0; color: #838980; font-size: 8px; }
 .provenance blockquote { margin: 10px 0; padding: 10px 11px; border-left: 2px solid #aa7334; color: #525850; background: #f8f0e2; font-family: var(--display); font-size: 11px; line-height: 1.5; }
+.provenance #evidence-speaker-label { font-family: var(--sans); font-size: 9px; font-weight: 450; }
+.evidence-attribution { margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line-soft); }
+.evidence-attribution > p { margin: 7px 0 0; color: #7e857c; font-size: 8px; line-height: 1.5; }
+.attribution-note { display: block; margin-top: 8px; color: #7a7166; font-size: 8px; line-height: 1.5; }
 .text-button { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; color: #737a71; background: transparent; font-size: 9px; }
 .warning-text { color: var(--danger) !important; }
 .decision-relevance { margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line-soft); }

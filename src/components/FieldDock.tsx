@@ -47,6 +47,7 @@ type FieldDockProps = {
   onAddCard: (kind: CardKind) => void;
   onAddSource: () => void;
   onOpenConnectors: () => void;
+  onSelectCard: (cardId: string) => void;
   onAsk: (prompt: string) => Promise<void>;
   onViewChange: (view: DockView) => void;
   onSetDecisionFrame: (frame: DecisionFrameInput) => Promise<void>;
@@ -105,6 +106,7 @@ export function FieldDock({
   onAddCard,
   onAddSource,
   onOpenConnectors,
+  onSelectCard,
   onAsk,
   onViewChange,
   onSetDecisionFrame,
@@ -185,6 +187,7 @@ export function FieldDock({
     if (nextMove.action === "add-evidence") onAddCard("evidence");
     if (nextMove.action === "ask-agent" && nextMove.prompt) void submit(nextMove.prompt);
     if (nextMove.action === "review-proposals") onViewChange("proposals");
+    if (nextMove.action === "review-attribution" && nextMove.cardId) onSelectCard(nextMove.cardId);
     if (nextMove.action === "change-stage") onSetStage(nextMove.stage);
     if (nextMove.action === "edit-frame") onViewChange("loop");
   }
@@ -195,7 +198,7 @@ export function FieldDock({
   }
 
   async function reviewSourceQuality(sourceId: string, sourceTitle: string) {
-    await onAsk(`Review source '${sourceTitle}' (${sourceId}) as decision-support material. Separate transcript fidelity, session evidence, and relevance to the active decision. Cite exact locators or exchanges. Flag leading, compound, abstract, or hypothetical prompts; speaker uncertainty; participant-fit gaps; and concrete recent behavior, consequences, or workarounds. Do not score the interviewer, set research quality, create criterion links, or make the decision.`);
+    await onAsk(`Review source '${sourceTitle}' (${sourceId}) as decision-support material. Separate transcript fidelity, session evidence, and relevance to the active decision. Cite exact locators or exchanges. Preserve diarized speaker labels, but do not infer participant or research-team roles from labels alone. Keep research-team prompts and hypotheses separate from participant evidence. Flag leading, compound, abstract, or hypothetical prompts; speaker uncertainty; participant-fit gaps; and concrete recent behavior, consequences, or workarounds. Do not score the interviewer, set research quality, set evidence attribution, create criterion links, or make the decision.`);
     onViewChange("proposals");
   }
 

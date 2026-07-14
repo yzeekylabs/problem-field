@@ -560,6 +560,7 @@ export default function App() {
               onAddCard={addCard}
               onAddSource={() => openSourceModal()}
               onOpenConnectors={() => setConnectorLibraryOpen(true)}
+              onSelectCard={setSelectedCardId}
               onAsk={queueAgentRequest}
               onCopyRequestCommand={(requestId) => void copyRequestCommand(requestId)}
               onReviewProposal={(proposalId, decision) => void mutate([
@@ -608,7 +609,7 @@ export default function App() {
               </button>
               {workspace.sources.length > 0 && (
                 <button
-                  onClick={() => void queueAgentRequest("Forage through the available sources and add only exact, source-linked evidence cards. Preserve quotes or observable details and locators; do not create observations or patterns yet.")}
+                  onClick={() => void queueAgentRequest("Forage through the available sources and add only exact, source-linked evidence cards. Preserve quotes, observable details, locators, and diarized speaker labels. Keep research-team prompts or hypotheses separate from participant evidence; do not infer participant role from a speaker label, and leave uncertain roles for human review. Do not create observations or patterns yet.")}
                   type="button"
                 >
                   Ask agent to forage
@@ -634,9 +635,12 @@ export default function App() {
               setSelectedCardId(null);
               void mutate([{ type: "deleteCard", cardId }], "Card removed");
             }}
-            onSave={(cardId, title, body, sourceRef, criterionLinks = []) => void mutate(
+            onSave={(cardId, title, body, sourceRef, criterionLinks = [], evidenceAttribution) => void mutate(
               [
                 { type: "updateCard", cardId, patch: { title, body, ...(sourceRef !== undefined ? { sourceRef } : {}) } },
+                ...(evidenceAttribution !== undefined
+                  ? [{ type: "setEvidenceAttribution" as const, cardId, attribution: evidenceAttribution }]
+                  : []),
                 ...(activeDecisionFrame ? [{ type: "setCriterionLinksForCard" as const, cardId, links: criterionLinks }] : []),
               ],
               "Card updated",

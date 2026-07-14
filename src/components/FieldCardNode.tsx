@@ -20,12 +20,29 @@ const kindIcons = {
   question: MessageCircleQuestion,
 };
 
+const attributionLabels = {
+  participant: "Participant",
+  research_team: "Research context",
+  mixed_exchange: "Mixed voices",
+  external_artifact: "External evidence",
+} as const;
+
 export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
   const { card, source, signal } = data;
   const Icon = kindIcons[card.kind];
   const display = getCardDisplayCopy(card);
   const sourceLabel = source ? getCompactLabel(source.title, 42) : "Needs a source";
-  const provenanceTitle = [source?.title ?? "Needs a source", card.sourceRef?.locator]
+  const attributionLabel = card.kind === "evidence"
+    ? card.evidenceAttribution
+      ? attributionLabels[card.evidenceAttribution.role]
+      : "Attribution needed"
+    : "";
+  const provenanceTitle = [
+    attributionLabel,
+    card.sourceRef?.speakerLabel ? `Speaker: ${card.sourceRef.speakerLabel}` : undefined,
+    source?.title ?? "Needs a source",
+    card.sourceRef?.locator,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -59,13 +76,18 @@ export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
       <p title={card.body}>{display.summary}</p>
       {card.kind === "evidence" && (
         <footer className={source ? "" : "needs-source"} title={provenanceTitle}>
-          {sourceLabel}
+          <span className={`evidence-attribution-tag evidence-attribution-tag--${card.evidenceAttribution?.role ?? "unreviewed"}`}>
+            {attributionLabel}
+          </span>
+          {card.sourceRef?.speakerLabel ? `${getCompactLabel(card.sourceRef.speakerLabel, 18)} · ` : ""}{sourceLabel}
         </footer>
       )}
       {card.kind === "pattern" && signal && (
         <footer className="pattern-signal">
           <span>{signal.status}</span>
-          {signal.evidenceCount} evidence · {signal.sourceCount} {signal.sourceCount === 1 ? "source" : "sources"} · {signal.contradictionCount} contrary
+          {signal.status === "unreviewed"
+            ? `${signal.attributionPendingCount} attribution · ${signal.researchContextCount} context`
+            : `${signal.evidenceCount} evidence · ${signal.sourceCount} ${signal.sourceCount === 1 ? "source" : "sources"} · ${signal.contradictionCount} contrary`}
         </footer>
       )}
     </article>

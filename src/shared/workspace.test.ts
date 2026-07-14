@@ -11,7 +11,7 @@ const now = "2026-07-14T04:00:00.000Z";
 
 function workspace(): Workspace {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     revision: 2,
     updatedAt: now,
     project: {
@@ -53,7 +53,7 @@ describe("applyOperationSet", () => {
 
     const migrated = parseWorkspace(legacy);
 
-    expect(migrated.schemaVersion).toBe(5);
+    expect(migrated.schemaVersion).toBe(6);
     expect(migrated.project.activeStage).toBe("forage");
     expect(migrated.project.onboardingComplete).toBe(true);
     expect(migrated.agentProposals).toEqual([]);
@@ -509,6 +509,63 @@ describe("applyOperationSet", () => {
       sessionEvidence: "behavior_rich",
       updatedBy: "human",
     });
+  });
+
+  it("keeps diarized labels as provenance while evidence role stays human-owned", () => {
+    const current = workspace();
+    current.cards[0] = {
+      ...current.cards[0],
+      kind: "evidence",
+      sourceRef: { sourceId: "call-1", speakerLabel: "SPEAKER_01" },
+    };
+    current.sources = [{ id: "call-1", title: "Customer call", kind: "transcript", importedAt: now }];
+
+    expect(() => applyOperationSet(current, {
+      baseRevision: 2,
+      actor: "agent",
+      operations: [{
+        type: "setEvidenceAttribution",
+        cardId: "a",
+        attribution: { role: "participant" },
+      }],
+    })).toThrow("explicit human review");
+
+    const attributed = applyOperationSet(current, {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{
+        type: "setEvidenceAttribution",
+        cardId: "a",
+        attribution: { role: "research_team" },
+      }],
+    }, now);
+
+    expect(attributed.cards[0].sourceRef?.speakerLabel).toBe("SPEAKER_01");
+    expect(attributed.cards[0].evidenceAttribution).toEqual({
+      role: "research_team",
+      confirmedBy: "human",
+      updatedAt: now,
+    });
+
+    const cleared = applyOperationSet(attributed, {
+      baseRevision: 3,
+      actor: "human",
+      operations: [{ type: "setEvidenceAttribution", cardId: "a", attribution: null }],
+    });
+    expect(cleared.cards[0].evidenceAttribution).toBeUndefined();
+    expect(cleared.cards[0].sourceRef?.speakerLabel).toBe("SPEAKER_01");
+  });
+
+  it("rejects evidence attribution on interpretation cards", () => {
+    expect(() => applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{
+        type: "setEvidenceAttribution",
+        cardId: "a",
+        attribution: { role: "participant" },
+      }],
+    })).toThrow("Only evidence cards");
   });
 
   it("does not let an open question count as decision evidence", () => {

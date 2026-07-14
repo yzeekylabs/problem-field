@@ -135,7 +135,19 @@ export const sourceRefSchema = z.object({
   sourceId: idSchema,
   locator: z.string().max(500).optional(),
   quote: z.string().max(20_000).optional(),
+  speakerLabel: z.string().min(1).max(240).optional(),
 });
+
+export const evidenceAttributionInputSchema = z.object({
+  role: z.enum(["participant", "research_team", "mixed_exchange", "external_artifact"]),
+});
+export type EvidenceAttributionInput = z.infer<typeof evidenceAttributionInputSchema>;
+
+export const evidenceAttributionSchema = evidenceAttributionInputSchema.extend({
+  confirmedBy: z.literal("human"),
+  updatedAt: z.string().datetime(),
+});
+export type EvidenceAttribution = z.infer<typeof evidenceAttributionSchema>;
 
 export const cardSchema = z.object({
   id: idSchema,
@@ -144,6 +156,7 @@ export const cardSchema = z.object({
   body: z.string().max(20_000),
   position: positionSchema,
   sourceRef: sourceRefSchema.optional(),
+  evidenceAttribution: evidenceAttributionSchema.optional(),
   display: displayCopySchema.optional(),
   createdBy: z.enum(["human", "agent", "system"]),
   createdAt: z.string().datetime(),
@@ -152,7 +165,7 @@ export const cardSchema = z.object({
 export type FieldCard = z.infer<typeof cardSchema>;
 
 const addCardInputSchema = cardSchema
-  .omit({ createdAt: true, updatedAt: true, display: true })
+  .omit({ createdAt: true, updatedAt: true, display: true, evidenceAttribution: true })
   .extend({ display: displayCopyInputSchema.optional() });
 
 export const connectionSchema = z.object({
@@ -197,7 +210,7 @@ export const agentProposalSchema = z.object({
 export type AgentProposal = z.infer<typeof agentProposalSchema>;
 
 export const workspaceSchema = z.object({
-  schemaVersion: z.literal(5),
+  schemaVersion: z.literal(6),
   revision: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
   project: z.object({
@@ -231,6 +244,7 @@ export function parseWorkspace(input: unknown): Workspace {
     || candidate.schemaVersion === 3
     || candidate.schemaVersion === 4
     || candidate.schemaVersion === 5
+    || candidate.schemaVersion === 6
   ) {
     candidate.agentProposals ??= [];
     candidate.decisionFrames ??= [];
@@ -248,7 +262,7 @@ export function parseWorkspace(input: unknown): Workspace {
       if (request.resolvedAt && !request.finishedAt) request.finishedAt = request.resolvedAt;
       delete request.resolvedAt;
     }
-    candidate.schemaVersion = 5;
+    candidate.schemaVersion = 6;
   }
 
   return workspaceSchema.parse(candidate);
@@ -310,6 +324,11 @@ export const operationSchema = z.discriminatedUnion("type", [
     type: z.literal("setCriterionLinksForCard"),
     cardId: idSchema,
     links: z.array(criterionLinkInputSchema).max(8),
+  }),
+  z.object({
+    type: z.literal("setEvidenceAttribution"),
+    cardId: idSchema,
+    attribution: evidenceAttributionInputSchema.nullable(),
   }),
   z.object({
     type: z.literal("addAgentRequest"),
@@ -628,6 +647,23 @@ export function applyOperationSet(
             updatedAt: now,
           })),
         ];
+        break;
+      }
+      case "setEvidenceAttribution": {
+        requireHuman(input.actor, "Evidence attribution");
+        const card = requireCard(next, operation.cardId);
+        if (card.kind !== "evidence") {
+          throw new DomainError("Only evidence cards can carry evidence attribution.");
+        }
+        if (operation.attribution === null) delete card.evidenceAttribution;
+        else {
+          card.evidenceAttribution = {
+            ...operation.attribution,
+            confirmedBy: "human",
+            updatedAt: now,
+          };
+        }
+        card.updatedAt = now;
         break;
       }
       case "addAgentRequest": {

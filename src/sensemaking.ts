@@ -1,5 +1,5 @@
 import { getActiveDecisionFrame } from "./shared/workspace.ts";
-import type { DecisionCriterion, FieldStage, Workspace } from "./shared/workspace.ts";
+import type { DecisionCriterion, FieldCard, FieldStage, Workspace } from "./shared/workspace.ts";
 
 export const fieldStages: Array<{
   id: FieldStage;
@@ -19,7 +19,9 @@ export type PatternSignal = {
   evidenceCount: number;
   sourceCount: number;
   contradictionCount: number;
-  status: "seed" | "emerging" | "grounded" | "contested";
+  attributionPendingCount: number;
+  researchContextCount: number;
+  status: "unreviewed" | "seed" | "emerging" | "grounded" | "contested";
 };
 
 export type CriterionRead = {
@@ -28,6 +30,10 @@ export type CriterionRead = {
   supportCount: number;
   challengeCount: number;
   sourceCount: number;
+  linkCount: number;
+  unqualifiedLinkCount: number;
+  attributionPendingCount: number;
+  researchContextCount: number;
 };
 
 export type DecisionReadout = {
@@ -37,22 +43,43 @@ export type DecisionReadout = {
   basisLabel: string;
   summary: string;
   sourceCount: number;
+  attributionPendingCount: number;
+  researchContextCount: number;
   criterionReads: CriterionRead[];
 };
 
-function sourceIdsForCard(workspace: Workspace, cardId: string, visited = new Set<string>()): Set<string> {
-  if (visited.has(cardId)) return new Set();
+function evidenceCardsForCard(workspace: Workspace, cardId: string, visited = new Set<string>()): FieldCard[] {
+  if (visited.has(cardId)) return [];
   visited.add(cardId);
   const card = workspace.cards.find((item) => item.id === cardId);
-  const sourceIds = new Set<string>();
-  if (card?.sourceRef) sourceIds.add(card.sourceRef.sourceId);
+  if (!card) return [];
+  if (card.kind === "evidence") return [card];
 
+  const evidenceCards: FieldCard[] = [];
   for (const connection of workspace.connections.filter(
     (item) => item.to === cardId && (item.kind === "supports" || item.kind === "contradicts"),
   )) {
-    for (const sourceId of sourceIdsForCard(workspace, connection.from, visited)) sourceIds.add(sourceId);
+    evidenceCards.push(...evidenceCardsForCard(workspace, connection.from, visited));
   }
-  return sourceIds;
+  return evidenceCards;
+}
+
+function evidenceBasisForCard(workspace: Workspace, cardId: string) {
+  const evidenceCards = [...new Map(
+    evidenceCardsForCard(workspace, cardId).map((card) => [card.id, card]),
+  ).values()];
+  const qualified = evidenceCards.filter((card) => (
+    card.evidenceAttribution?.role === "participant"
+    || card.evidenceAttribution?.role === "external_artifact"
+  ));
+  const attributionPendingCount = evidenceCards.filter((card) => (
+    !card.evidenceAttribution || card.evidenceAttribution.role === "mixed_exchange"
+  )).length;
+  const researchContextCount = evidenceCards.filter((card) => (
+    card.evidenceAttribution?.role === "research_team"
+  )).length;
+  const sourceIds = new Set(qualified.flatMap((card) => card.sourceRef ? [card.sourceRef.sourceId] : []));
+  return { qualifiedCount: qualified.length, sourceIds, attributionPendingCount, researchContextCount };
 }
 
 export function getDecisionReadout(workspace: Workspace): DecisionReadout {
@@ -65,6 +92,8 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
       basisLabel: "Not framed",
       summary: "Agree the decision, working hypothesis, and what would change your mind.",
       sourceCount: 0,
+      attributionPendingCount: 0,
+      researchContextCount: 0,
       criterionReads: [],
     };
   }
@@ -72,11 +101,23 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
   const linkedSourceIds = new Set<string>();
   const criterionReads = frame.criteria.map((criterion): CriterionRead => {
     const links = workspace.criterionLinks.filter((link) => link.criterionId === criterion.id);
-    const supportCount = links.filter((link) => link.stance === "supports").length;
-    const challengeCount = links.filter((link) => link.stance === "challenges").length;
+    let supportCount = 0;
+    let challengeCount = 0;
+    let unqualifiedLinkCount = 0;
+    let attributionPendingCount = 0;
+    let researchContextCount = 0;
     const criterionSourceIds = new Set<string>();
     for (const link of links) {
-      for (const sourceId of sourceIdsForCard(workspace, link.cardId)) {
+      const basis = evidenceBasisForCard(workspace, link.cardId);
+      attributionPendingCount += basis.attributionPendingCount;
+      researchContextCount += basis.researchContextCount;
+      if (basis.qualifiedCount === 0) {
+        unqualifiedLinkCount += 1;
+        continue;
+      }
+      if (link.stance === "supports") supportCount += 1;
+      else challengeCount += 1;
+      for (const sourceId of basis.sourceIds) {
         criterionSourceIds.add(sourceId);
         linkedSourceIds.add(sourceId);
       }
@@ -94,6 +135,10 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
       supportCount,
       challengeCount,
       sourceCount: criterionSourceIds.size,
+      linkCount: links.length,
+      unqualifiedLinkCount,
+      attributionPendingCount,
+      researchContextCount,
     };
   });
 
@@ -107,6 +152,9 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
     || (read.criterion.polarity === "reconsider" && (read.status === "supported" || read.status === "mixed"))
   )).length;
   const totalLinks = workspace.criterionLinks.length;
+  const totalQualifiedLinks = criterionReads.reduce((total, read) => total + read.supportCount + read.challengeCount, 0);
+  const attributionPendingCount = criterionReads.reduce((total, read) => total + read.attributionPendingCount, 0);
+  const researchContextCount = criterionReads.reduce((total, read) => total + read.researchContextCount, 0);
   const relevantSources = workspace.sources.filter((source) => linkedSourceIds.has(source.id));
   const materialQualityCaveat = relevantSources.some((source) => (
     source.researchQuality?.transcriptFidelity === "needs_review"
@@ -123,14 +171,18 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
   const counterSignalReviewed = criterionReads.some((read) => (
     read.criterion.polarity === "reconsider" && read.sourceCount > 0
   ));
-  const basis = totalLinks === 0 || linkedSourceIds.size < 2 || materialQualityCaveat || untestedCount > 0
+  const basis = totalQualifiedLinks === 0
+    || linkedSourceIds.size < 2
+    || materialQualityCaveat
+    || attributionPendingCount > 0
+    || untestedCount > 0
     ? "limited"
     : qualityReviewed && counterSignalReviewed
       ? "considered"
       : "developing";
   const basisLabel = basis === "limited" ? "Limited" : basis === "developing" ? "Developing" : "Considered";
 
-  if (totalLinks === 0 || linkedSourceIds.size === 0 || untestedCount > 0) {
+  if (totalQualifiedLinks === 0 || linkedSourceIds.size === 0 || untestedCount > 0) {
     return {
       status: "too_early",
       label: "Too early to call",
@@ -138,10 +190,16 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
       basisLabel,
       summary: totalLinks === 0
         ? "No evidence has been accepted against the agreed criteria yet."
-        : linkedSourceIds.size === 0
-          ? "Accepted links do not yet resolve to an inspectable source. Restore the evidence chain before reading direction."
-          : `${untestedCount} ${untestedCount === 1 ? "criterion has" : "criteria have"} no accepted evidence yet.`,
+        : totalQualifiedLinks === 0 && attributionPendingCount > 0
+          ? "Accepted links still rely on unreviewed or mixed attribution. Confirm whose evidence it is before reading direction."
+          : totalQualifiedLinks === 0 && researchContextCount > 0
+            ? "Research-team speech is being held as context; no participant or external evidence is carrying the criteria yet."
+            : linkedSourceIds.size === 0
+              ? "Accepted links do not yet resolve to an inspectable source. Restore the evidence chain before reading direction."
+              : `${untestedCount} ${untestedCount === 1 ? "criterion has" : "criteria have"} no qualifying participant or external evidence yet.`,
       sourceCount: linkedSourceIds.size,
+      attributionPendingCount,
+      researchContextCount,
       criterionReads,
     };
   }
@@ -154,6 +212,8 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
       basisLabel,
       summary: "Accepted evidence points in both directions. Compare explanations before choosing the next move.",
       sourceCount: linkedSourceIds.size,
+      attributionPendingCount,
+      researchContextCount,
       criterionReads,
     };
   }
@@ -166,6 +226,8 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
       basisLabel,
       summary: "The accepted evidence currently weighs against the agreed continuation bar.",
       sourceCount: linkedSourceIds.size,
+      attributionPendingCount,
+      researchContextCount,
       criterionReads,
     };
   }
@@ -177,6 +239,8 @@ export function getDecisionReadout(workspace: Workspace): DecisionReadout {
     basisLabel,
     summary: "The accepted evidence currently meets the direction of the agreed continuation criteria.",
     sourceCount: linkedSourceIds.size,
+    attributionPendingCount,
+    researchContextCount,
     criterionReads,
   };
 }
@@ -185,19 +249,33 @@ export function getPatternSignal(workspace: Workspace, patternId: string): Patte
   const visited = new Set<string>();
   const evidenceIds = new Set<string>();
   const sourceIds = new Set<string>();
+  const attributionPendingIds = new Set<string>();
+  const researchContextIds = new Set<string>();
   let contradictionCount = 0;
 
   function walk(cardId: string) {
     if (visited.has(cardId)) return;
     visited.add(cardId);
     for (const connection of workspace.connections.filter((item) => item.to === cardId)) {
-      if (connection.kind === "contradicts") contradictionCount += 1;
       if (connection.kind !== "supports" && connection.kind !== "contradicts") continue;
+      if (
+        connection.kind === "contradicts"
+        && evidenceBasisForCard(workspace, connection.from).qualifiedCount > 0
+      ) contradictionCount += 1;
       const upstream = workspace.cards.find((card) => card.id === connection.from);
       if (!upstream) continue;
       if (upstream.kind === "evidence") {
-        evidenceIds.add(upstream.id);
-        if (upstream.sourceRef) sourceIds.add(upstream.sourceRef.sourceId);
+        if (
+          upstream.evidenceAttribution?.role === "participant"
+          || upstream.evidenceAttribution?.role === "external_artifact"
+        ) {
+          evidenceIds.add(upstream.id);
+          if (upstream.sourceRef) sourceIds.add(upstream.sourceRef.sourceId);
+        } else if (upstream.evidenceAttribution?.role === "research_team") {
+          researchContextIds.add(upstream.id);
+        } else {
+          attributionPendingIds.add(upstream.id);
+        }
       } else {
         walk(upstream.id);
       }
@@ -206,7 +284,9 @@ export function getPatternSignal(workspace: Workspace, patternId: string): Patte
 
   walk(patternId);
   const status =
-    contradictionCount > 0
+    evidenceIds.size === 0 && (attributionPendingIds.size > 0 || researchContextIds.size > 0)
+      ? "unreviewed"
+      : contradictionCount > 0
       ? "contested"
       : sourceIds.size >= 3 && evidenceIds.size >= 4
         ? "grounded"
@@ -218,6 +298,8 @@ export function getPatternSignal(workspace: Workspace, patternId: string): Patte
     evidenceCount: evidenceIds.size,
     sourceCount: sourceIds.size,
     contradictionCount,
+    attributionPendingCount: attributionPendingIds.size,
+    researchContextCount: researchContextIds.size,
     status,
   };
 }
@@ -227,7 +309,8 @@ export type NextMove = {
   title: string;
   detail: string;
   actionLabel: string;
-  action: "add-source" | "add-evidence" | "ask-agent" | "review-proposals" | "change-stage" | "edit-frame";
+  action: "add-source" | "add-evidence" | "ask-agent" | "review-proposals" | "review-attribution" | "change-stage" | "edit-frame";
+  cardId?: string;
   prompt?: string;
 };
 
@@ -300,6 +383,37 @@ export function getNextMove(workspace: Workspace): NextMove {
     };
   }
 
+  const qualifiedEvidence = evidence.filter((card) => (
+    card.evidenceAttribution?.role === "participant"
+    || card.evidenceAttribution?.role === "external_artifact"
+  ));
+  const attributionPendingEvidence = evidence.filter((card) => (
+    !card.evidenceAttribution || card.evidenceAttribution.role === "mixed_exchange"
+  ));
+  if (qualifiedEvidence.length === 0 && attributionPendingEvidence.length > 0) {
+    const mixedCount = attributionPendingEvidence.filter((card) => card.evidenceAttribution?.role === "mixed_exchange").length;
+    return {
+      stage: "forage",
+      title: mixedCount === attributionPendingEvidence.length ? "Separate the voices" : "Confirm whose evidence this is",
+      detail: mixedCount === attributionPendingEvidence.length
+        ? `${mixedCount} mixed ${mixedCount === 1 ? "exchange needs" : "exchanges need"} a participant-only excerpt before carrying signal.`
+        : `${attributionPendingEvidence.length} evidence ${attributionPendingEvidence.length === 1 ? "card needs" : "cards need"} a human-reviewed voice role before carrying signal.`,
+      actionLabel: "Review evidence",
+      action: "review-attribution",
+      cardId: attributionPendingEvidence[0].id,
+    };
+  }
+
+  if (qualifiedEvidence.length === 0) {
+    return {
+      stage: "forage",
+      title: "Bring participant evidence into view",
+      detail: "The field currently contains research-team context, but no participant voice or external behavior is carrying signal.",
+      actionLabel: "Add evidence",
+      action: "add-evidence",
+    };
+  }
+
 
   if (workspace.criterionLinks.length === 0) {
     return {
@@ -308,7 +422,7 @@ export function getNextMove(workspace: Workspace): NextMove {
       detail: "Ask for a provisional criterion pass, then accept only the links you can inspect and defend.",
       actionLabel: "Suggest relevance",
       action: "ask-agent",
-      prompt: "Review the current field against the active decision frame. For each continue and reconsider criterion, cite card and source IDs that support it, challenge it, or do not bear on it. Separate observed behavior from stated preference and note source-quality caveats. Do not change the decision frame, quality assessments, evidence links, or final decision; return provisional suggestions for human review.",
+      prompt: "Review the current field against the active decision frame. For each continue and reconsider criterion, cite card and source IDs that support it, challenge it, or do not bear on it. Separate participant evidence from research-team prompts or hypotheses; a diarized speaker label is not a role, so leave uncertain attribution unresolved. Separate observed behavior from stated preference and note source-quality caveats. Do not change the decision frame, quality assessments, evidence attribution, evidence links, or final decision; return provisional suggestions for human review.",
     };
   }
 

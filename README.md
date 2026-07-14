@@ -14,7 +14,7 @@ This is an early working slice, built to answer one question: **does it feel mat
 - Preserve source provenance on evidence cards.
 - See pattern signal as evidence/source/contradiction composition rather than a fake score.
 - Read `too early`, `mixed`, `leaning continue`, or `leaning reconsider` from human-accepted, source-linked evidence—never model confidence.
-- Keep transcript fidelity and interview evidence context attached to the source, with agent critique remaining cited and provisional.
+- Keep transcript fidelity attached to the source, diarized labels separate from human-reviewed voice roles, and research-team speech visible but excluded from directional signal.
 - Ask a question from the canvas and follow safe, live execution milestones while the local runner works through Codex.
 - Let Codex or Claude Code propose patterns and questions for explicit human review.
 - Reuse the selected Codex or Claude Code host's MCP configuration and connect low-friction sources without storing a second auth registry.
