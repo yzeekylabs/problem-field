@@ -167,6 +167,7 @@ export default function App() {
   const [dragActive, setDragActive] = useState(false);
   const displayedNodesRef = useRef<FieldNode[]>([]);
   const layoutAnimationFrameRef = useRef<number | null>(null);
+  const initialAutoFitCompleteRef = useRef(false);
 
   const load = useCallback(async (quiet = false) => {
     try {
@@ -311,12 +312,6 @@ export default function App() {
     () => workspace ? workspaceToEdges(workspace, displayNodes, selectedCardId, layoutFrame?.routes) : [],
     [displayNodes, layoutFrame?.routes, selectedCardId, workspace],
   );
-  const graphShapeKey = useMemo(
-    () => workspace
-      ? `${workspace.cards.map((card) => card.id).join(",")}|${workspace.connections.map((connection) => connection.id).join(",")}`
-      : "",
-    [workspace],
-  );
   const selectedCard = workspace?.cards.find((card) => card.id === selectedCardId) ?? null;
   const selectedSignal = workspace && selectedCard?.kind === "pattern"
     ? getPatternSignal(workspace, selectedCard.id)
@@ -377,12 +372,18 @@ export default function App() {
   }, [layoutMode, nodes, workspace]);
 
   useEffect(() => {
-    if (layoutAnimating || !flowInstance || !workspace?.project.onboardingComplete || displayNodes.length === 0) return;
+    if (
+      initialAutoFitCompleteRef.current
+      || !flowInstance
+      || !workspace?.project.onboardingComplete
+      || displayNodes.length === 0
+    ) return;
+    initialAutoFitCompleteRef.current = true;
     const frame = window.requestAnimationFrame(() => {
       void flowInstance.fitView({ padding: canvasFitPadding, maxZoom: 0.95, duration: 420 });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [displayNodes.length, flowInstance, graphShapeKey, layoutAnimating, layoutMode, workspace?.project.onboardingComplete]);
+  }, [displayNodes.length, flowInstance, workspace?.project.onboardingComplete]);
 
   const onNodesChange = useCallback((changes: NodeChange<FieldNode>[]) => {
     const canonicalChanges = layoutMode === "custom"

@@ -111,6 +111,23 @@ function nodeRect(node: FieldNode, padding = 0): CanvasRect {
   };
 }
 
+function layoutBounds(nodes: FieldNode[]): CanvasRect {
+  return nodes.reduce<CanvasRect>((bounds, node) => {
+    const rect = nodeRect(node);
+    return {
+      left: Math.min(bounds.left, rect.left),
+      right: Math.max(bounds.right, rect.right),
+      top: Math.min(bounds.top, rect.top),
+      bottom: Math.max(bounds.bottom, rect.bottom),
+    };
+  }, {
+    left: Number.POSITIVE_INFINITY,
+    right: Number.NEGATIVE_INFINITY,
+    top: Number.POSITIVE_INFINITY,
+    bottom: Number.NEGATIVE_INFINITY,
+  });
+}
+
 function port(node: FieldNode, side: HandleSide): CanvasPoint {
   const size = dimensions(node);
   switch (side) {
@@ -477,11 +494,25 @@ export function getGroupedNodes(nodes: FieldNode[], connections: FieldConnection
     rowHeight = Math.max(rowHeight, island.height);
   }
 
-  return nodes.map((node) => {
+  const groupedNodes = nodes.map((node) => {
     const position = groupedPositions.get(node.id);
     return {
       ...node,
       position: position ?? node.position,
     };
   });
+  const sourceBounds = layoutBounds(nodes);
+  const groupedBounds = layoutBounds(groupedNodes);
+  const offset = {
+    x: (sourceBounds.left + sourceBounds.right - groupedBounds.left - groupedBounds.right) / 2,
+    y: (sourceBounds.top + sourceBounds.bottom - groupedBounds.top - groupedBounds.bottom) / 2,
+  };
+
+  return groupedNodes.map((node) => ({
+    ...node,
+    position: {
+      x: node.position.x + offset.x,
+      y: node.position.y + offset.y,
+    },
+  }));
 }

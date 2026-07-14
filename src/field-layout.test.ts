@@ -52,6 +52,14 @@ function crossesNode(start: CanvasPoint, end: CanvasPoint, obstacle: FieldNode) 
     && Math.max(Math.min(start.y, end.y), top) < Math.min(Math.max(start.y, end.y), bottom);
 }
 
+function boundsCenter(nodes: FieldNode[]) {
+  const left = Math.min(...nodes.map((item) => item.position.x));
+  const right = Math.max(...nodes.map((item) => item.position.x + (item.measured?.width ?? 252)));
+  const top = Math.min(...nodes.map((item) => item.position.y));
+  const bottom = Math.max(...nodes.map((item) => item.position.y + (item.measured?.height ?? 180)));
+  return { x: (left + right) / 2, y: (top + bottom) / 2 };
+}
+
 describe("canvas layout", () => {
   it("lays a directed evidence graph from left to right without mutating custom positions", () => {
     const nodes = [node("evidence-a", 700, 400), node("evidence-b", -200, 80), node("pattern-a", -600, -300)];
@@ -61,6 +69,22 @@ describe("canvas layout", () => {
 
     expect(grouped.filter((item) => item.id.startsWith("evidence")).every((item) => item.position.x < pattern.position.x)).toBe(true);
     expect(nodes.map((item) => item.position)).toEqual(originalPositions);
+  });
+
+  it("keeps the grouped projection centred on the custom field", () => {
+    const nodes = [
+      node("evidence-a", 4_200, -800),
+      node("evidence-b", 4_540, -260),
+      node("pattern-a", 5_100, 120),
+      node("question-a", 5_480, -620),
+    ];
+    const grouped = getGroupedNodes(nodes, [
+      connection("evidence-a", "pattern-a"),
+      connection("evidence-b", "pattern-a"),
+    ]);
+
+    expect(boundsCenter(grouped).x).toBeCloseTo(boundsCenter(nodes).x);
+    expect(boundsCenter(grouped).y).toBeCloseTo(boundsCenter(nodes).y);
   });
 
   it("connects horizontally from the nearest opposing card sides", () => {
