@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { FieldNode } from "./components/FieldCardNode.tsx";
-import { getConnectionHandles, getGroupedNodes, getObstacleAvoidingRoute, type CanvasPoint } from "./field-layout.ts";
+import {
+  getConnectionHandles,
+  getGroupedNodes,
+  getObstacleAvoidingRoute,
+  interpolateNodePositions,
+  interpolateRoutePoints,
+  type CanvasPoint,
+} from "./field-layout.ts";
 import type { FieldConnection } from "./shared/workspace.ts";
 
 function node(id: string, x: number, y: number): FieldNode {
@@ -70,6 +77,25 @@ describe("canvas layout", () => {
     });
   });
 
+  it("interpolates layout positions without changing either canonical layout", () => {
+    const custom = [node("evidence-a", 20, 40)];
+    const grouped = [node("evidence-a", 420, 240)];
+    const halfway = interpolateNodePositions(custom, grouped, 0.5);
+
+    expect(halfway[0].position).toEqual({ x: 220, y: 140 });
+    expect(custom[0].position).toEqual({ x: 20, y: 40 });
+    expect(grouped[0].position).toEqual({ x: 420, y: 240 });
+  });
+
+  it("morphs relationship routes without losing either route's corners", () => {
+    const from = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+    const to = [{ x: 0, y: 0 }, { x: 0, y: 50 }, { x: 50, y: 50 }, { x: 50, y: 100 }];
+
+    expect(interpolateRoutePoints(from, to, 0)).toContainEqual({ x: 100, y: 0 });
+    expect(interpolateRoutePoints(from, to, 1)).toContainEqual({ x: 0, y: 50 });
+    expect(interpolateRoutePoints(from, to, 0.5)).toHaveLength(7);
+  });
+
   it("routes around an unrelated card instead of drawing through it", () => {
     const source = node("evidence-a", 0, 0);
     const obstacle = node("pattern-blocker", 320, 0);
@@ -77,6 +103,22 @@ describe("canvas layout", () => {
     const route = getObstacleAvoidingRoute(source, target, [source, obstacle, target]);
 
     expect(route.points.length).toBeGreaterThan(2);
+    for (let index = 1; index < route.points.length; index += 1) {
+      expect(crossesNode(route.points[index - 1], route.points[index], obstacle)).toBe(false);
+    }
+  });
+
+  it("can preserve a stable pair of card ports across a layout transition", () => {
+    const source = node("evidence-a", 0, 0);
+    const obstacle = node("pattern-blocker", 320, 0);
+    const target = node("pattern-target", 640, 0);
+    const route = getObstacleAvoidingRoute(source, target, [source, obstacle, target], {
+      sourceHandle: "bottom",
+      targetHandle: "top",
+    });
+
+    expect(route.sourceHandle).toBe("bottom");
+    expect(route.targetHandle).toBe("top");
     for (let index = 1; index < route.points.length; index += 1) {
       expect(crossesNode(route.points[index - 1], route.points[index], obstacle)).toBe(false);
     }

@@ -4,6 +4,7 @@ import type { CanvasPoint } from "../field-layout.ts";
 
 type SpatialEdgeData = Record<string, unknown> & {
   points: CanvasPoint[];
+  useStoredEndpoints?: boolean;
 };
 
 export type SpatialFieldEdge = Edge<SpatialEdgeData, "spatial">;
@@ -70,13 +71,16 @@ export function SpatialEdge({
   style,
 }: EdgeProps<SpatialFieldEdge>) {
   const storedPoints = data?.points ?? [];
-  const points = storedPoints.length >= 2
-    ? [
-        { x: sourceX, y: sourceY },
-        ...storedPoints.slice(1, -1),
-        { x: targetX, y: targetY },
-      ]
-    : [{ x: sourceX, y: sourceY }, { x: targetX, y: targetY }];
+  let points = [{ x: sourceX, y: sourceY }, { x: targetX, y: targetY }];
+  if (storedPoints.length >= 2) {
+    points = data?.useStoredEndpoints
+      ? storedPoints
+      : [
+          { x: sourceX, y: sourceY },
+          ...storedPoints.slice(1, -1),
+          { x: targetX, y: targetY },
+        ];
+  }
   const labelPoint = midpoint(points);
 
   return (

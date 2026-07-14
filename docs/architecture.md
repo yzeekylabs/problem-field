@@ -38,6 +38,8 @@ Canvas arrangement follows the same rule. Card coordinates in the workspace are 
 
 Relationship paths are also a browser-only projection. The connection endpoints and meaning remain canonical, while the renderer measures every card, reserves a clearance envelope around those rectangles, and chooses a short orthogonal route through open corridors. It can change ports or paths when cards move without creating another saved representation of the relationship.
 
+Switching between Custom and Grouped interpolates the projected card positions and relationship paths together. The transition keeps stable edge ports, suspends dragging until it settles, and honors reduced-motion preferences; only the final Custom coordinates remain durable state.
+
 Visual copy is bounded presentation metadata stored beside—never instead of—the full project or card content. Agent-generated display titles and summaries retain their author and update time. A semantic edit to the full title, body, name, or question invalidates existing display copy unless the same operation supplies a replacement. Surfaces use a word-boundary fallback while copy is missing, so layout remains readable without letting a stale summary become a second truth.
 
 Execution activity is a fourth, explicitly non-canonical lane. The runner writes sanitized lifecycle and tool-category milestones under `data/local/agent-runs/`, keyed by the canonical request's `runId`. The browser reads that lane for live feedback, but it cannot turn activity into evidence or mutate the workspace through it. Keeping these frequent updates out of `workspace.json` also prevents progress reporting from racing the agent's own revision-checked field operations.

@@ -33,6 +33,59 @@ type RouteResult = {
   cost: number;
 };
 
+export function interpolateNodePositions(fromNodes: FieldNode[], toNodes: FieldNode[], progress: number) {
+  const boundedProgress = Math.min(1, Math.max(0, progress));
+  const fromById = new Map(fromNodes.map((node) => [node.id, node.position]));
+  return toNodes.map((node) => {
+    const from = fromById.get(node.id) ?? node.position;
+    return {
+      ...node,
+      position: {
+        x: from.x + (node.position.x - from.x) * boundedProgress,
+        y: from.y + (node.position.y - from.y) * boundedProgress,
+      },
+    };
+  });
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+  return b === 0 ? a : greatestCommonDivisor(b, a % b);
+}
+
+function subdivideRoute(points: CanvasPoint[], segmentCount: number) {
+  const sourceSegments = Math.max(1, points.length - 1);
+  const divisionsPerSegment = Math.max(1, segmentCount / sourceSegments);
+  const result: CanvasPoint[] = [];
+  for (let index = 0; index < sourceSegments; index += 1) {
+    const start = points[index] ?? points[0];
+    const end = points[index + 1] ?? start;
+    for (let division = 0; division < divisionsPerSegment; division += 1) {
+      const progress = division / divisionsPerSegment;
+      result.push({
+        x: start.x + (end.x - start.x) * progress,
+        y: start.y + (end.y - start.y) * progress,
+      });
+    }
+  }
+  result.push(points[points.length - 1]);
+  return result;
+}
+
+export function interpolateRoutePoints(fromPoints: CanvasPoint[], toPoints: CanvasPoint[], progress: number) {
+  if (fromPoints.length < 2) return toPoints.map((point) => ({ ...point }));
+  if (toPoints.length < 2) return fromPoints.map((point) => ({ ...point }));
+  const fromSegments = fromPoints.length - 1;
+  const toSegments = toPoints.length - 1;
+  const segmentCount = (fromSegments * toSegments) / greatestCommonDivisor(fromSegments, toSegments);
+  const from = subdivideRoute(fromPoints, segmentCount);
+  const to = subdivideRoute(toPoints, segmentCount);
+  const boundedProgress = Math.min(1, Math.max(0, progress));
+  return to.map((point, index) => ({
+    x: from[index].x + (point.x - from[index].x) * boundedProgress,
+    y: from[index].y + (point.y - from[index].y) * boundedProgress,
+  }));
+}
+
 function dimensions(node: FieldNode) {
   return {
     width: node.measured?.width ?? node.width ?? fallbackNodeWidth,
@@ -256,13 +309,15 @@ export function getObstacleAvoidingRoute(
   source: FieldNode,
   target: FieldNode,
   nodes: FieldNode[],
+  fixedHandles?: { sourceHandle: HandleSide; targetHandle: HandleSide },
 ): RoutedConnection {
-  const preferred = getConnectionHandles(source, target);
+  const preferred = fixedHandles ?? getConnectionHandles(source, target);
   let best: (RoutedConnection & { cost: number }) | null = null;
 
   for (const clearance of routingClearances) {
     const obstacles = nodes.map((node) => nodeRect(node, clearance));
-    for (const handles of candidateHandles(source, target, preferred)) {
+    const handlesToTry = fixedHandles ? [fixedHandles] : candidateHandles(source, target, preferred);
+    for (const handles of handlesToTry) {
       const sourcePort = port(source, handles.sourceHandle);
       const targetPort = port(target, handles.targetHandle);
       const sourceEscape = escape(sourcePort, handles.sourceHandle, clearance);

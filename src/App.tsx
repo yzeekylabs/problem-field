@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -25,7 +25,10 @@ import { SourceModal } from "./components/SourceModal.tsx";
 import {
   getGroupedNodes,
   getObstacleAvoidingRoute,
+  interpolateNodePositions,
+  interpolateRoutePoints,
   type CanvasLayoutMode,
+  type RoutedConnection,
 } from "./field-layout.ts";
 import { getPatternSignal } from "./sensemaking.ts";
 import { inferSourceKind } from "./source-files.ts";
@@ -41,6 +44,13 @@ import type {
 const nodeTypes = { fieldCard: FieldCardNode };
 const edgeTypes = { spatial: SpatialEdge };
 const canvasFitPadding = { top: "60px", right: "6%", bottom: "190px", left: "6%" } as const;
+const layoutTransitionDuration = 560;
+
+function easeLayoutTransition(progress: number) {
+  return progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - ((-2 * progress + 2) ** 3) / 2;
+}
 
 function workspaceToNodes(workspace: Workspace): FieldNode[] {
   return workspace.cards.map((card) => ({
@@ -59,13 +69,15 @@ function workspaceToEdges(
   workspace: Workspace,
   nodes: FieldNode[],
   selectedCardId: string | null,
+  routeOverrides?: ReadonlyMap<string, RoutedConnection>,
 ): SpatialFieldEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
 
   return workspace.connections.map((connection) => {
     const source = nodeById.get(connection.from);
     const target = nodeById.get(connection.to);
-    const route = source && target ? getObstacleAvoidingRoute(source, target, nodes) : undefined;
+    const route = routeOverrides?.get(connection.id)
+      ?? (source && target ? getObstacleAvoidingRoute(source, target, nodes) : undefined);
     const isRelated = selectedCardId === connection.from || selectedCardId === connection.to;
     const emphasis = selectedCardId ? (isRelated ? " is-related" : " is-muted") : "";
 
@@ -77,7 +89,10 @@ function workspaceToEdges(
       targetHandle: route?.targetHandle,
       label: connection.label,
       type: "spatial",
-      data: { points: route?.points ?? [] },
+      data: {
+        points: route?.points ?? [],
+        ...(routeOverrides ? { useStoredEndpoints: true } : {}),
+      },
       interactionWidth: 18,
       markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11 },
       className: `field-edge field-edge--${connection.kind}${emphasis}`,
@@ -85,6 +100,42 @@ function workspaceToEdges(
     };
   });
 }
+
+function workspaceToRoutes(
+  workspace: Workspace,
+  nodes: FieldNode[],
+  fixedRoutes?: ReadonlyMap<string, RoutedConnection>,
+) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return new Map(workspace.connections.flatMap((connection) => {
+    const source = nodeById.get(connection.from);
+    const target = nodeById.get(connection.to);
+    const fixed = fixedRoutes?.get(connection.id);
+    return source && target
+      ? [[connection.id, getObstacleAvoidingRoute(source, target, nodes, fixed)] as const]
+      : [];
+  }));
+}
+
+function interpolateRoutes(
+  fromRoutes: ReadonlyMap<string, RoutedConnection>,
+  toRoutes: ReadonlyMap<string, RoutedConnection>,
+  progress: number,
+) {
+  return new Map([...toRoutes].map(([id, to]) => {
+    const from = fromRoutes.get(id) ?? to;
+    return [id, {
+      sourceHandle: to.sourceHandle,
+      targetHandle: to.targetHandle,
+      points: interpolateRoutePoints(from.points, to.points, progress),
+    }] as const;
+  }));
+}
+
+type LayoutAnimationFrame = {
+  nodes: FieldNode[];
+  routes: ReadonlyMap<string, RoutedConnection>;
+};
 
 function starterCopy(kind: CardKind) {
   switch (kind) {
@@ -103,6 +154,8 @@ export default function App() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [nodes, setNodes] = useState<FieldNode[]>([]);
   const [layoutMode, setLayoutMode] = useState<CanvasLayoutMode>("custom");
+  const [layoutFrame, setLayoutFrame] = useState<LayoutAnimationFrame | null>(null);
+  const [layoutAnimating, setLayoutAnimating] = useState(false);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<FieldNode> | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -112,6 +165,8 @@ export default function App() {
   const [connectorLibraryOpen, setConnectorLibraryOpen] = useState(false);
   const [droppedFile, setDroppedFile] = useState<File | undefined>();
   const [dragActive, setDragActive] = useState(false);
+  const displayedNodesRef = useRef<FieldNode[]>([]);
+  const layoutAnimationFrameRef = useRef<number | null>(null);
 
   const load = useCallback(async (quiet = false) => {
     try {
@@ -247,13 +302,14 @@ export default function App() {
     }
   }, [busy, load, workspace]);
 
-  const displayNodes = useMemo(
+  const targetNodes = useMemo(
     () => layoutMode === "grouped" && workspace ? getGroupedNodes(nodes, workspace.connections) : nodes,
     [layoutMode, nodes, workspace],
   );
+  const displayNodes = layoutFrame?.nodes ?? targetNodes;
   const edges = useMemo(
-    () => workspace ? workspaceToEdges(workspace, displayNodes, selectedCardId) : [],
-    [displayNodes, selectedCardId, workspace],
+    () => workspace ? workspaceToEdges(workspace, displayNodes, selectedCardId, layoutFrame?.routes) : [],
+    [displayNodes, layoutFrame?.routes, selectedCardId, workspace],
   );
   const graphShapeKey = useMemo(
     () => workspace
@@ -267,12 +323,66 @@ export default function App() {
     : undefined;
 
   useEffect(() => {
-    if (!flowInstance || !workspace?.project.onboardingComplete || displayNodes.length === 0) return;
+    displayedNodesRef.current = displayNodes;
+  }, [displayNodes]);
+
+  useEffect(() => () => {
+    if (layoutAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(layoutAnimationFrameRef.current);
+    }
+  }, []);
+
+  const changeLayoutMode = useCallback((nextMode: CanvasLayoutMode) => {
+    if (!workspace || nextMode === layoutMode) return;
+    const destination = nextMode === "grouped" ? getGroupedNodes(nodes, workspace.connections) : nodes;
+    const currentById = new Map(displayedNodesRef.current.map((node) => [node.id, node.position]));
+    const origin = destination.map((node) => ({
+      ...node,
+      position: currentById.get(node.id) ?? node.position,
+    }));
+
+    if (layoutAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(layoutAnimationFrameRef.current);
+      layoutAnimationFrameRef.current = null;
+    }
+    setLayoutMode(nextMode);
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setLayoutFrame(null);
+      setLayoutAnimating(false);
+      return;
+    }
+
+    const destinationRoutes = workspaceToRoutes(workspace, destination);
+    const originRoutes = workspaceToRoutes(workspace, origin, destinationRoutes);
+    setLayoutFrame({ nodes: origin, routes: originRoutes });
+    setLayoutAnimating(true);
+    const startedAt = window.performance.now();
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / layoutTransitionDuration);
+      const easedProgress = easeLayoutTransition(progress);
+      setLayoutFrame({
+        nodes: interpolateNodePositions(origin, destination, easedProgress),
+        routes: interpolateRoutes(originRoutes, destinationRoutes, easedProgress),
+      });
+      if (progress < 1) {
+        layoutAnimationFrameRef.current = window.requestAnimationFrame(animate);
+      } else {
+        layoutAnimationFrameRef.current = null;
+        setLayoutFrame(null);
+        setLayoutAnimating(false);
+      }
+    };
+    layoutAnimationFrameRef.current = window.requestAnimationFrame(animate);
+  }, [layoutMode, nodes, workspace]);
+
+  useEffect(() => {
+    if (layoutAnimating || !flowInstance || !workspace?.project.onboardingComplete || displayNodes.length === 0) return;
     const frame = window.requestAnimationFrame(() => {
       void flowInstance.fitView({ padding: canvasFitPadding, maxZoom: 0.95, duration: 420 });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [displayNodes.length, flowInstance, graphShapeKey, layoutMode, workspace?.project.onboardingComplete]);
+  }, [displayNodes.length, flowInstance, graphShapeKey, layoutAnimating, layoutMode, workspace?.project.onboardingComplete]);
 
   const onNodesChange = useCallback((changes: NodeChange<FieldNode>[]) => {
     const canonicalChanges = layoutMode === "custom"
@@ -388,7 +498,7 @@ export default function App() {
           minZoom={0.2}
           nodeTypes={nodeTypes}
           nodes={displayNodes}
-          nodesDraggable={layoutMode === "custom"}
+          nodesDraggable={layoutMode === "custom" && !layoutAnimating}
           onConnect={onConnect}
           onInit={setFlowInstance}
           onNodeClick={(_, node) => setSelectedCardId(node.id)}
@@ -427,7 +537,7 @@ export default function App() {
             )}
 
             {workspace.cards.length > 1 && (
-              <CanvasLayoutControl mode={layoutMode} onChange={setLayoutMode} />
+              <CanvasLayoutControl mode={layoutMode} onChange={changeLayoutMode} />
             )}
 
             <FieldDock
