@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+import { readFile } from "node:fs/promises";
+
+import { operationSetSchema, type Workspace } from "../src/shared/workspace.ts";
+import { readWorkspace, writeOperations } from "../server/store.ts";
+
+function printHelp() {
+  console.log(`Problem Field CLI
+
+Usage:
+  npm run field -- context [request-id]
+  npm run field -- requests
+  npm run field -- snapshot
+  npm run field -- apply <file|->
+`);
+}
+
+function formatContext(workspace: Workspace, requestId?: string) {
+  const lines = [
+    `# ${workspace.project.name}`,
+    "",
+    `Revision: ${workspace.revision}`,
+    `Status: ${workspace.project.status}`,
+    `Guiding question: ${workspace.project.question}`,
+    "",
+    "## Sources",
+  ];
+
+  for (const source of workspace.sources) {
+    lines.push(`- [${source.id}] ${source.title} (${source.kind})${source.origin ? ` — ${source.origin}` : ""}`);
+  }
+
+  lines.push("", "## Cards");
+  for (const card of workspace.cards) {
+    const source = card.sourceRef
+      ? ` | source=${card.sourceRef.sourceId}${card.sourceRef.locator ? ` @ ${card.sourceRef.locator}` : ""}`
+      : "";
+    lines.push(
+      `- [${card.id}] ${card.kind.toUpperCase()} — ${card.title} | position=(${card.position.x}, ${card.position.y}) | by=${card.createdBy}${source}`,
+    );
+    if (card.body) lines.push(`  ${card.body.replaceAll("\n", " ")}`);
+    if (card.sourceRef?.quote) lines.push(`  Exact quote: “${card.sourceRef.quote.replaceAll("\n", " ")}”`);
+  }
+
+  lines.push("", "## Connections");
+  for (const connection of workspace.connections) {
+    lines.push(
+      `- ${connection.from} --${connection.kind}${connection.label ? `:${connection.label}` : ""}--> ${connection.to}`,
+    );
+  }
+
+  const openRequests = workspace.agentRequests.filter((request) => request.status === "open");
+  lines.push("", "## Open agent requests");
+  if (openRequests.length === 0) lines.push("- None");
+  for (const request of openRequests) {
+    lines.push(
+      `- [${request.id}] ${request.prompt}${request.scopeCardIds.length ? ` | scope=${request.scopeCardIds.join(",")}` : " | scope=whole field"}`,
+    );
+  }
+
+  if (requestId) {
+    const request = workspace.agentRequests.find((item) => item.id === requestId);
+    if (!request) throw new Error(`Agent request '${requestId}' does not exist.`);
+    lines.push("", "## Active request", request.prompt);
+  }
+
+  lines.push(
+    "",
+    "## Write protocol",
+    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit data/workspace.json directly.`,
+  );
+
+  return lines.join("\n");
+}
+
+async function readStdin() {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function main() {
+  const [, , command, argument] = process.argv;
+  if (!command || command === "help" || command === "--help") {
+    printHelp();
+    return;
+  }
+
+  if (command === "snapshot") {
+    console.log(JSON.stringify(await readWorkspace(), null, 2));
+    return;
+  }
+
+  if (command === "context") {
+    console.log(formatContext(await readWorkspace(), argument));
+    return;
+  }
+
+  if (command === "requests") {
+    const workspace = await readWorkspace();
+    console.log(
+      JSON.stringify(
+        { revision: workspace.revision, requests: workspace.agentRequests.filter((item) => item.status === "open") },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  if (command === "apply") {
+    if (!argument) throw new Error("apply requires a JSON file path or '-' for stdin.");
+    const contents = argument === "-" ? await readStdin() : await readFile(argument, "utf8");
+    const input = operationSetSchema.parse(JSON.parse(contents));
+    const workspace = await writeOperations(input);
+    console.log(`Applied ${input.operations.length} operation(s). Workspace revision is now ${workspace.revision}.`);
+    return;
+  }
+
+  throw new Error(`Unknown command '${command}'. Run 'npm run field -- help'.`);
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});

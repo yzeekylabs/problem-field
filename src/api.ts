@@ -1,0 +1,37 @@
+import type { OperationSet, Workspace } from "./shared/workspace.ts";
+
+type ApiErrorBody = {
+  error?: string;
+  message?: string;
+  actual?: number;
+};
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly body: ApiErrorBody,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export async function getWorkspace(): Promise<Workspace> {
+  const response = await fetch("/api/workspace", { cache: "no-store" });
+  if (!response.ok) throw new ApiError("Could not load the field.", response.status, {});
+  return response.json() as Promise<Workspace>;
+}
+
+export async function postOperations(input: OperationSet): Promise<Workspace> {
+  const response = await fetch("/api/operations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    throw new ApiError(body.message ?? "The field could not be updated.", response.status, body);
+  }
+  return response.json() as Promise<Workspace>;
+}

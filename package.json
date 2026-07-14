@@ -1,0 +1,48 @@
+{
+  "name": "problem-field",
+  "private": false,
+  "version": "0.1.0",
+  "description": "A local-first, agent-readable canvas for making sense of messy problem spaces.",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "node --import tsx server/index.ts",
+    "dev:web": "vite",
+    "build": "tsc -b && vite build",
+    "check": "npm run lint && npm run test && npm run build",
+    "field": "node --import tsx scripts/field.ts",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "start:api": "node --import tsx server/index.ts",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@hono/node-server": "latest",
+    "@xyflow/react": "latest",
+    "hono": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "eslint": "latest",
+    "eslint-plugin-react-hooks": "latest",
+    "eslint-plugin-react-refresh": "latest",
+    "globals": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "typescript-eslint": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}
