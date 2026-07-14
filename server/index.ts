@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 
 import { DomainError, operationSetSchema } from "../src/shared/workspace.ts";
 import { kickAgentRunner, startAgentRunner } from "./agent-runner.ts";
-import { connectConnector, getConnectorStates } from "./connectors.ts";
+import { cancelConnectorLogin, connectConnector, getConnectorStates } from "./connectors.ts";
 import {
   readSourceAsset,
   readWorkspace,
@@ -34,6 +34,15 @@ app.post("/api/connectors/:id/connect", async (context) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "The connector could not be started.";
     return context.json({ error: "connector_failed", message }, 422);
+  }
+});
+
+app.post("/api/connectors/:id/cancel", async (context) => {
+  try {
+    return context.json(await cancelConnectorLogin(context.req.param("id")));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The sign-in could not be stopped.";
+    return context.json({ error: "connector_cancel_failed", message }, 422);
   }
 });
 

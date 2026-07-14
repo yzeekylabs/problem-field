@@ -8,6 +8,7 @@ const codexPath = process.env.CODEX_PATH ?? "codex";
 const claudePath = process.env.CLAUDE_PATH ?? "claude";
 const provider = process.env.FIELD_AGENT_PROVIDER === "claude" ? "claude" : "codex";
 const providerLabel = provider === "claude" ? "Claude Code" : "Codex";
+const loginTimeoutMs = Number(process.env.FIELD_CONNECTOR_LOGIN_TIMEOUT_MS ?? 3 * 60 * 1_000);
 
 type McpServer = {
   name: string;
@@ -21,7 +22,18 @@ type TransientConnection = {
   message?: string;
 };
 
+type ActiveLogin = {
+  child: ReturnType<typeof spawn>;
+  settled: boolean;
+  timer?: NodeJS.Timeout;
+};
+
 const transientConnections = new Map<ConnectorId, TransientConnection>();
+const activeLogins = new Map<ConnectorId, ActiveLogin>();
+
+process.once("exit", () => {
+  for (const login of activeLogins.values()) login.child.kill("SIGTERM");
+});
 
 async function listMcpServers(): Promise<McpServer[]> {
   if (provider === "claude") {
@@ -57,9 +69,11 @@ async function listMcpServers(): Promise<McpServer[]> {
 function connectorState(connector: (typeof connectorCatalog)[number], server?: McpServer) {
   const transient = transientConnections.get(connector.id);
   if (transient) return transient;
-  if (connector.availability === "setup-required") return { status: "unavailable" as const };
   if (server?.auth_status === "authenticated") return { status: "connected" as const };
-  if (server) return { status: "configured" as const };
+  if (server) return {
+    status: "configured" as const,
+    message: `Configured in ${providerLabel}; this host does not report OAuth health.`,
+  };
   return { status: "available" as const };
 }
 
@@ -74,21 +88,53 @@ export async function getConnectorStates() {
   };
 }
 
+function settleLogin(id: ConnectorId, state: TransientConnection) {
+  const login = activeLogins.get(id);
+  if (!login || login.settled) return;
+  login.settled = true;
+  if (login.timer) clearTimeout(login.timer);
+  activeLogins.delete(id);
+  transientConnections.set(id, state);
+}
+
+function stopLogin(id: ConnectorId, message: string) {
+  const login = activeLogins.get(id);
+  if (!login || login.settled) {
+    transientConnections.set(id, { status: "failed", message });
+    return;
+  }
+  settleLogin(id, { status: "failed", message });
+  login.child.kill("SIGTERM");
+  setTimeout(() => {
+    if (login.child.exitCode === null) login.child.kill("SIGKILL");
+  }, 5_000).unref();
+}
+
 function beginLogin(id: ConnectorId) {
-  transientConnections.set(id, { status: "connecting", message: "Finish sign-in in the browser window." });
+  if (activeLogins.has(id)) return;
+  transientConnections.set(id, {
+    status: "connecting",
+    message: "Waiting for the browser to return. You can cancel and try again.",
+  });
   const child = spawn(provider === "claude" ? claudePath : codexPath, ["mcp", "login", id], {
     env: process.env,
     shell: false,
     stdio: ["ignore", "ignore", "pipe"],
   });
+  const login: ActiveLogin = { child, settled: false };
+  activeLogins.set(id, login);
+  login.timer = setTimeout(() => {
+    stopLogin(id, "Sign-in timed out. Try again when you are ready.");
+  }, loginTimeoutMs);
+  login.timer.unref();
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += String(chunk); });
   child.once("error", (error) => {
-    transientConnections.set(id, { status: "failed", message: error.message });
+    settleLogin(id, { status: "failed", message: error.message });
   });
   child.once("close", (code) => {
-    if (code === 0) transientConnections.set(id, { status: "connected", message: `Connected to ${providerLabel}.` });
-    else transientConnections.set(id, {
+    if (code === 0) settleLogin(id, { status: "connected", message: `Connected to ${providerLabel}.` });
+    else settleLogin(id, {
       status: "failed",
       message: stderr.trim().slice(0, 500) || "Sign-in did not complete.",
     });
@@ -98,9 +144,6 @@ function beginLogin(id: ConnectorId) {
 export async function connectConnector(id: string) {
   const connector = getConnectorDefinition(id);
   if (!connector) throw new Error("Unknown connector.");
-  if (connector.availability !== "featured" || !connector.endpoint) {
-    throw new Error(connector.constraint ?? "This connector needs manual setup.");
-  }
   const servers = await listMcpServers();
   const existing = servers.find((server) => server.name === connector.id);
   if (!existing) {
@@ -117,5 +160,12 @@ export async function connectConnector(id: string) {
   } else if (transientConnections.get(connector.id)?.status !== "connecting") {
     beginLogin(connector.id);
   }
+  return getConnectorStates();
+}
+
+export async function cancelConnectorLogin(id: string) {
+  const connector = getConnectorDefinition(id);
+  if (!connector) throw new Error("Unknown connector.");
+  stopLogin(connector.id, "Sign-in stopped. Try again when you are ready.");
   return getConnectorStates();
 }

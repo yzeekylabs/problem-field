@@ -59,7 +59,7 @@ export async function importSourceFile(
 }
 
 export type ConnectorState = ConnectorDefinition & {
-  status: "available" | "configured" | "connecting" | "connected" | "failed" | "unavailable";
+  status: "available" | "configured" | "connecting" | "connected" | "failed";
   message?: string;
 };
 
@@ -79,6 +79,15 @@ export async function connectConnector(id: string): Promise<ConnectorStateRespon
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
     throw new ApiError(body.message ?? "The connector could not be started.", response.status, body);
+  }
+  return response.json() as Promise<ConnectorStateResponse>;
+}
+
+export async function cancelConnectorLogin(id: string): Promise<ConnectorStateResponse> {
+  const response = await fetch(`/api/connectors/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    throw new ApiError(body.message ?? "The sign-in could not be stopped.", response.status, body);
   }
   return response.json() as Promise<ConnectorStateResponse>;
 }

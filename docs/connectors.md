@@ -9,10 +9,10 @@ The first connector library optimizes for a narrow promise: a normal user can ad
 - **Granola** — official remote endpoint `https://mcp.granola.ai/mcp`, browser authentication.
 - **Figma** — official remote endpoint `https://mcp.figma.com/mcp`. Figma limits the server to catalogued MCP clients, but its current setup guide explicitly supports Codex and documents the same `codex mcp add` route used here. This is different from becoming a verified partner connector inside Figma Make.
 
-## Visible, not connectable yet
+## Omitted for now
 
-- **Slack** has an official remote MCP server, but a custom client must use a registered Slack app with a fixed client ID and secret. Anthropic's Slack plugin is easy for Claude, but using that as an app-level shortcut would make source availability provider-specific.
-- **Google Drive / Docs** has an official Drive MCP server in developer preview. Current setup requires a Google OAuth client ID and secret, so it fails the one-click bar.
+- **Slack** has an official remote MCP server, but a custom client must use a registered Slack app with a fixed client ID and secret. It is intentionally absent from the library rather than shown as an unavailable promise.
+- **Google Drive / Docs** has an official Drive MCP server in developer preview. Current setup requires a Google OAuth client ID and secret, so it is also intentionally absent from the library.
 
 ## Runtime rule
 

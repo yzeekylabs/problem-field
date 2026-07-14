@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ExternalLink, LoaderCircle, Plug, X } from "lucide-react";
+import { Check, CircleX, ExternalLink, LoaderCircle, Plug, X } from "lucide-react";
 
 import {
+  cancelConnectorLogin,
   connectConnector,
   getConnectors,
   type ConnectorState,
@@ -68,9 +69,21 @@ export function ConnectorLibrary({ onClose }: ConnectorLibraryProps) {
     }
   }
 
+  async function cancel(connector: ConnectorState) {
+    setWorkingId(connector.id);
+    setError(null);
+    try {
+      setData(await cancelConnectorLogin(connector.id));
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "Could not stop this sign-in.");
+      await load();
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
   const availableToAgent = data?.connectors.filter((connector) => connector.status === "connected") ?? [];
-  const featured = data?.connectors.filter((connector) => connector.availability === "featured" && connector.status !== "connected") ?? [];
-  const later = data?.connectors.filter((connector) => connector.availability === "setup-required") ?? [];
+  const featured = data?.connectors.filter((connector) => connector.status !== "connected") ?? [];
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
@@ -112,7 +125,8 @@ export function ConnectorLibrary({ onClose }: ConnectorLibraryProps) {
 
         <div className="connector-grid" aria-label="Featured connectors">
           {featured.map((connector) => {
-            const isWorking = workingId === connector.id || connector.status === "connecting";
+            const isWorking = workingId === connector.id;
+            const isWaiting = connector.status === "connecting";
             const connected = connector.status === "connected";
             return (
               <article className="connector-card" key={connector.id}>
@@ -125,11 +139,11 @@ export function ConnectorLibrary({ onClose }: ConnectorLibraryProps) {
                 <button
                   className={connected ? "is-connected" : ""}
                   disabled={isWorking || connected}
-                  onClick={() => void connect(connector)}
+                  onClick={() => void (isWaiting ? cancel(connector) : connect(connector))}
                   type="button"
                 >
-                  {isWorking ? <LoaderCircle aria-hidden="true" className="connector-spinner" size={14} /> : connected ? <Check aria-hidden="true" size={14} /> : <ExternalLink aria-hidden="true" size={14} />}
-                  {isWorking ? "Finish in browser" : connected ? "Connected" : connector.status === "configured" ? "Continue sign-in" : connector.status === "failed" ? "Try again" : "Connect"}
+                  {isWorking ? <LoaderCircle aria-hidden="true" className="connector-spinner" size={14} /> : isWaiting ? <CircleX aria-hidden="true" size={14} /> : connected ? <Check aria-hidden="true" size={14} /> : <ExternalLink aria-hidden="true" size={14} />}
+                  {isWorking ? (isWaiting ? "Stopping…" : "Opening browser…") : isWaiting ? "Cancel sign-in" : connected ? "Connected" : connector.status === "configured" ? "Reconnect" : connector.status === "failed" ? "Try again" : "Connect"}
                 </button>
               </article>
             );
@@ -140,21 +154,6 @@ export function ConnectorLibrary({ onClose }: ConnectorLibraryProps) {
           {!data && !error && <p className="connector-library__loading">Reading your Codex connections…</p>}
         </div>
 
-        <section className="connector-later" aria-labelledby="connector-later-title">
-          <div>
-            <span className="section-label">When setup gets simpler</span>
-            <h3 id="connector-later-title">Useful, but not one-click yet</h3>
-          </div>
-          <div>
-            {later.map((connector) => (
-              <article key={connector.id}>
-                <ConnectorMark connector={connector} />
-                <div><strong>{connector.name}</strong><p>{connector.constraint}</p></div>
-                <span>Not yet</span>
-              </article>
-            ))}
-          </div>
-        </section>
       </section>
     </div>
   );
