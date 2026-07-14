@@ -7,7 +7,6 @@ import {
   ReactFlow,
   applyNodeChanges,
   type Connection,
-  type Edge,
   type NodeChange,
   type ReactFlowInstance,
 } from "@xyflow/react";
@@ -21,10 +20,11 @@ import { FieldCardNode, type FieldNode } from "./components/FieldCardNode.tsx";
 import { FieldLogo } from "./components/FieldLogo.tsx";
 import { FirstRun, type BootstrapInput } from "./components/FirstRun.tsx";
 import { Inspector } from "./components/Inspector.tsx";
+import { SpatialEdge, type SpatialFieldEdge } from "./components/SpatialEdge.tsx";
 import { SourceModal } from "./components/SourceModal.tsx";
 import {
-  getConnectionHandles,
   getGroupedNodes,
+  getObstacleAvoidingRoute,
   type CanvasLayoutMode,
 } from "./field-layout.ts";
 import { getPatternSignal } from "./sensemaking.ts";
@@ -39,6 +39,7 @@ import type {
 } from "./shared/workspace.ts";
 
 const nodeTypes = { fieldCard: FieldCardNode };
+const edgeTypes = { spatial: SpatialEdge };
 const canvasFitPadding = { top: "60px", right: "6%", bottom: "190px", left: "6%" } as const;
 
 function workspaceToNodes(workspace: Workspace): FieldNode[] {
@@ -58,13 +59,13 @@ function workspaceToEdges(
   workspace: Workspace,
   nodes: FieldNode[],
   selectedCardId: string | null,
-): Edge[] {
+): SpatialFieldEdge[] {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
 
   return workspace.connections.map((connection) => {
     const source = nodeById.get(connection.from);
     const target = nodeById.get(connection.to);
-    const handles = source && target ? getConnectionHandles(source, target) : undefined;
+    const route = source && target ? getObstacleAvoidingRoute(source, target, nodes) : undefined;
     const isRelated = selectedCardId === connection.from || selectedCardId === connection.to;
     const emphasis = selectedCardId ? (isRelated ? " is-related" : " is-muted") : "";
 
@@ -72,11 +73,11 @@ function workspaceToEdges(
       id: connection.id,
       source: connection.from,
       target: connection.to,
-      sourceHandle: handles?.sourceHandle,
-      targetHandle: handles?.targetHandle,
+      sourceHandle: route?.sourceHandle,
+      targetHandle: route?.targetHandle,
       label: connection.label,
-      type: "smoothstep",
-      pathOptions: { offset: 26, borderRadius: 14 },
+      type: "spatial",
+      data: { points: route?.points ?? [] },
       interactionWidth: 18,
       markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11 },
       className: `field-edge field-edge--${connection.kind}${emphasis}`,
@@ -379,6 +380,7 @@ export default function App() {
         <ReactFlow
           colorMode="light"
           deleteKeyCode={null}
+          edgeTypes={edgeTypes}
           edges={edges}
           fitView
           fitViewOptions={{ padding: canvasFitPadding, maxZoom: 0.95 }}

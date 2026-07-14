@@ -5,11 +5,33 @@ import type { FieldConnection } from "./shared/workspace.ts";
 
 export type CanvasLayoutMode = "custom" | "grouped";
 export type HandleSide = "top" | "right" | "bottom" | "left";
+export type CanvasPoint = { x: number; y: number };
+
+export type RoutedConnection = {
+  sourceHandle: HandleSide;
+  targetHandle: HandleSide;
+  points: CanvasPoint[];
+};
 
 const fallbackNodeWidth = 252;
 const fallbackNodeHeight = 210;
 const islandGap = 112;
 const islandPadding = 36;
+const routingClearances = [28, 20, 12, 6, 2, 0] as const;
+const routingTurnPenalty = 56;
+const epsilon = 0.01;
+
+type CanvasRect = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+type RouteResult = {
+  points: CanvasPoint[];
+  cost: number;
+};
 
 function dimensions(node: FieldNode) {
   return {
@@ -24,6 +46,248 @@ function center(node: FieldNode) {
     x: node.position.x + size.width / 2,
     y: node.position.y + size.height / 2,
   };
+}
+
+function nodeRect(node: FieldNode, padding = 0): CanvasRect {
+  const size = dimensions(node);
+  return {
+    left: node.position.x - padding,
+    right: node.position.x + size.width + padding,
+    top: node.position.y - padding,
+    bottom: node.position.y + size.height + padding,
+  };
+}
+
+function port(node: FieldNode, side: HandleSide): CanvasPoint {
+  const size = dimensions(node);
+  switch (side) {
+    case "top": return { x: node.position.x + size.width / 2, y: node.position.y };
+    case "right": return { x: node.position.x + size.width, y: node.position.y + size.height / 2 };
+    case "bottom": return { x: node.position.x + size.width / 2, y: node.position.y + size.height };
+    case "left": return { x: node.position.x, y: node.position.y + size.height / 2 };
+  }
+}
+
+function escape(point: CanvasPoint, side: HandleSide, distance: number): CanvasPoint {
+  switch (side) {
+    case "top": return { x: point.x, y: point.y - distance };
+    case "right": return { x: point.x + distance, y: point.y };
+    case "bottom": return { x: point.x, y: point.y + distance };
+    case "left": return { x: point.x - distance, y: point.y };
+  }
+}
+
+function pointInsideRect(point: CanvasPoint, rect: CanvasRect) {
+  return point.x > rect.left + epsilon
+    && point.x < rect.right - epsilon
+    && point.y > rect.top + epsilon
+    && point.y < rect.bottom - epsilon;
+}
+
+function segmentCrossesRectInterior(start: CanvasPoint, end: CanvasPoint, rect: CanvasRect) {
+  if (Math.abs(start.y - end.y) < epsilon) {
+    if (start.y <= rect.top + epsilon || start.y >= rect.bottom - epsilon) return false;
+    const segmentLeft = Math.min(start.x, end.x);
+    const segmentRight = Math.max(start.x, end.x);
+    return Math.max(segmentLeft, rect.left) < Math.min(segmentRight, rect.right) - epsilon;
+  }
+  if (Math.abs(start.x - end.x) < epsilon) {
+    if (start.x <= rect.left + epsilon || start.x >= rect.right - epsilon) return false;
+    const segmentTop = Math.min(start.y, end.y);
+    const segmentBottom = Math.max(start.y, end.y);
+    return Math.max(segmentTop, rect.top) < Math.min(segmentBottom, rect.bottom) - epsilon;
+  }
+  return true;
+}
+
+function segmentIsClear(start: CanvasPoint, end: CanvasPoint, obstacles: CanvasRect[]) {
+  return obstacles.every((rect) => !segmentCrossesRectInterior(start, end, rect));
+}
+
+function uniqueCoordinates(values: number[]) {
+  return values
+    .sort((a, b) => a - b)
+    .filter((value, index, sorted) => index === 0 || Math.abs(value - sorted[index - 1]) >= epsilon);
+}
+
+function simplifyRoute(points: CanvasPoint[]) {
+  const distinct = points.filter((point, index) => {
+    const previous = points[index - 1];
+    return !previous || Math.abs(point.x - previous.x) >= epsilon || Math.abs(point.y - previous.y) >= epsilon;
+  });
+  return distinct.filter((point, index) => {
+    if (index === 0 || index === distinct.length - 1) return true;
+    const previous = distinct[index - 1];
+    const next = distinct[index + 1];
+    const sameX = Math.abs(previous.x - point.x) < epsilon && Math.abs(point.x - next.x) < epsilon;
+    const sameY = Math.abs(previous.y - point.y) < epsilon && Math.abs(point.y - next.y) < epsilon;
+    return !sameX && !sameY;
+  });
+}
+
+function pushHeap(heap: Array<{ state: number; cost: number }>, entry: { state: number; cost: number }) {
+  heap.push(entry);
+  let index = heap.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (heap[parent].cost <= heap[index].cost) break;
+    [heap[parent], heap[index]] = [heap[index], heap[parent]];
+    index = parent;
+  }
+}
+
+function popHeap(heap: Array<{ state: number; cost: number }>) {
+  const first = heap[0];
+  const last = heap.pop();
+  if (!first || !last || heap.length === 0) return first;
+  heap[0] = last;
+  let index = 0;
+  while (true) {
+    const left = index * 2 + 1;
+    const right = left + 1;
+    let smallest = index;
+    if (left < heap.length && heap[left].cost < heap[smallest].cost) smallest = left;
+    if (right < heap.length && heap[right].cost < heap[smallest].cost) smallest = right;
+    if (smallest === index) break;
+    [heap[index], heap[smallest]] = [heap[smallest], heap[index]];
+    index = smallest;
+  }
+  return first;
+}
+
+function findOrthogonalRoute(start: CanvasPoint, end: CanvasPoint, obstacles: CanvasRect[]): RouteResult | null {
+  const xs = uniqueCoordinates([start.x, end.x, ...obstacles.flatMap((rect) => [rect.left, rect.right])]);
+  const ys = uniqueCoordinates([start.y, end.y, ...obstacles.flatMap((rect) => [rect.top, rect.bottom])]);
+  const width = xs.length;
+  const pointCount = width * ys.length;
+  const points = Array.from({ length: pointCount }, (_, index) => ({
+    x: xs[index % width],
+    y: ys[Math.floor(index / width)],
+  }));
+  const startX = xs.findIndex((value) => Math.abs(value - start.x) < epsilon);
+  const startY = ys.findIndex((value) => Math.abs(value - start.y) < epsilon);
+  const endX = xs.findIndex((value) => Math.abs(value - end.x) < epsilon);
+  const endY = ys.findIndex((value) => Math.abs(value - end.y) < epsilon);
+  if (startX < 0 || startY < 0 || endX < 0 || endY < 0) return null;
+  const startIndex = startY * width + startX;
+  const endIndex = endY * width + endX;
+  const blocked = points.map((point, index) => (
+    index !== startIndex && index !== endIndex && obstacles.some((rect) => pointInsideRect(point, rect))
+  ));
+
+  // Direction states are horizontal, vertical, and an initial directionless state.
+  const distance = new Float64Array(pointCount * 3);
+  distance.fill(Number.POSITIVE_INFINITY);
+  const previous = new Int32Array(pointCount * 3);
+  previous.fill(-1);
+  const startState = startIndex * 3 + 2;
+  distance[startState] = 0;
+  const heap: Array<{ state: number; cost: number }> = [];
+  pushHeap(heap, { state: startState, cost: 0 });
+
+  while (heap.length > 0) {
+    const current = popHeap(heap);
+    if (!current || current.cost > distance[current.state] + epsilon) continue;
+    const pointIndex = Math.floor(current.state / 3);
+    const direction = current.state % 3;
+    const xIndex = pointIndex % width;
+    const yIndex = Math.floor(pointIndex / width);
+    const neighbours = [
+      { x: xIndex - 1, y: yIndex, direction: 0 },
+      { x: xIndex + 1, y: yIndex, direction: 0 },
+      { x: xIndex, y: yIndex - 1, direction: 1 },
+      { x: xIndex, y: yIndex + 1, direction: 1 },
+    ];
+
+    for (const neighbour of neighbours) {
+      if (neighbour.x < 0 || neighbour.x >= width || neighbour.y < 0 || neighbour.y >= ys.length) continue;
+      const neighbourIndex = neighbour.y * width + neighbour.x;
+      if (blocked[neighbourIndex]) continue;
+      const from = points[pointIndex];
+      const to = points[neighbourIndex];
+      if (!segmentIsClear(from, to, obstacles)) continue;
+      const length = Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
+      const bend = direction !== 2 && direction !== neighbour.direction ? routingTurnPenalty : 0;
+      const nextState = neighbourIndex * 3 + neighbour.direction;
+      const nextCost = current.cost + length + bend;
+      if (nextCost + epsilon >= distance[nextState]) continue;
+      distance[nextState] = nextCost;
+      previous[nextState] = current.state;
+      pushHeap(heap, { state: nextState, cost: nextCost });
+    }
+  }
+
+  const endStates = [endIndex * 3, endIndex * 3 + 1, endIndex * 3 + 2];
+  const endState = endStates.reduce((best, state) => distance[state] < distance[best] ? state : best);
+  if (!Number.isFinite(distance[endState])) return null;
+  const reversed: CanvasPoint[] = [];
+  let state = endState;
+  while (state >= 0) {
+    reversed.push(points[Math.floor(state / 3)]);
+    if (state === startState) break;
+    state = previous[state];
+  }
+  if (state !== startState) return null;
+  return { points: simplifyRoute(reversed.reverse()), cost: distance[endState] };
+}
+
+function candidateHandles(source: FieldNode, target: FieldNode, preferred: ReturnType<typeof getConnectionHandles>) {
+  const sourceCenter = center(source);
+  const targetCenter = center(target);
+  const horizontal = targetCenter.x >= sourceCenter.x
+    ? { sourceHandle: "right" as const, targetHandle: "left" as const }
+    : { sourceHandle: "left" as const, targetHandle: "right" as const };
+  const vertical = targetCenter.y >= sourceCenter.y
+    ? { sourceHandle: "bottom" as const, targetHandle: "top" as const }
+    : { sourceHandle: "top" as const, targetHandle: "bottom" as const };
+  const reverseHorizontal = horizontal.sourceHandle === "right"
+    ? { sourceHandle: "left" as const, targetHandle: "right" as const }
+    : { sourceHandle: "right" as const, targetHandle: "left" as const };
+  const reverseVertical = vertical.sourceHandle === "bottom"
+    ? { sourceHandle: "top" as const, targetHandle: "bottom" as const }
+    : { sourceHandle: "bottom" as const, targetHandle: "top" as const };
+  const candidates = [preferred, horizontal, vertical, reverseHorizontal, reverseVertical];
+  return candidates.filter((candidate, index) => candidates.findIndex((other) => (
+    other.sourceHandle === candidate.sourceHandle && other.targetHandle === candidate.targetHandle
+  )) === index);
+}
+
+export function getObstacleAvoidingRoute(
+  source: FieldNode,
+  target: FieldNode,
+  nodes: FieldNode[],
+): RoutedConnection {
+  const preferred = getConnectionHandles(source, target);
+  let best: (RoutedConnection & { cost: number }) | null = null;
+
+  for (const clearance of routingClearances) {
+    const obstacles = nodes.map((node) => nodeRect(node, clearance));
+    for (const handles of candidateHandles(source, target, preferred)) {
+      const sourcePort = port(source, handles.sourceHandle);
+      const targetPort = port(target, handles.targetHandle);
+      const sourceEscape = escape(sourcePort, handles.sourceHandle, clearance);
+      const targetEscape = escape(targetPort, handles.targetHandle, clearance);
+      const routed = findOrthogonalRoute(sourceEscape, targetEscape, obstacles);
+      if (!routed) continue;
+      const points = simplifyRoute([sourcePort, ...routed.points, targetPort]);
+      const preferencePenalty = handles.sourceHandle === preferred.sourceHandle ? 0 : routingTurnPenalty;
+      const candidate = { ...handles, points, cost: routed.cost + clearance * 2 + preferencePenalty };
+      if (!best || candidate.cost < best.cost) best = candidate;
+    }
+    if (best) break;
+  }
+
+  if (best) {
+    return {
+      sourceHandle: best.sourceHandle,
+      targetHandle: best.targetHandle,
+      points: best.points,
+    };
+  }
+
+  const sourcePort = port(source, preferred.sourceHandle);
+  const targetPort = port(target, preferred.targetHandle);
+  return { ...preferred, points: [sourcePort, targetPort] };
 }
 
 export function getConnectionHandles(source: FieldNode, target: FieldNode): {

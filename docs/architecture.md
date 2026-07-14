@@ -34,7 +34,9 @@ extracted text/version    pattern / question               (explicit accept or d
 
 This is the core split-brain defense: AI conversation state, visual layout state, and source extraction state never become competing stores of meaning.
 
-Canvas arrangement follows the same rule. Card coordinates in the workspace are the user's canonical **Custom** layout. **Grouped** is a browser-only projection derived from current cards and relationships: it lays out connected islands, routes edges to the nearest card sides, and never writes positions or increments the workspace revision. Returning to Custom therefore restores the exact saved coordinates rather than reconstructing them from another client-side store.
+Canvas arrangement follows the same rule. Card coordinates in the workspace are the user's canonical **Custom** layout. **Grouped** is a browser-only projection derived from current cards and relationships: it lays out connected islands and never writes positions or increments the workspace revision. Returning to Custom therefore restores the exact saved coordinates rather than reconstructing them from another client-side store.
+
+Relationship paths are also a browser-only projection. The connection endpoints and meaning remain canonical, while the renderer measures every card, reserves a clearance envelope around those rectangles, and chooses a short orthogonal route through open corridors. It can change ports or paths when cards move without creating another saved representation of the relationship.
 
 Visual copy is bounded presentation metadata stored beside—never instead of—the full project or card content. Agent-generated display titles and summaries retain their author and update time. A semantic edit to the full title, body, name, or question invalidates existing display copy unless the same operation supplies a replacement. Surfaces use a word-boundary fallback while copy is missing, so layout remains readable without letting a stale summary become a second truth.
 
