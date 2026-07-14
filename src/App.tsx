@@ -5,34 +5,30 @@ import {
   Controls,
   MarkerType,
   ReactFlow,
-  addEdge,
   applyNodeChanges,
   type Connection,
   type Edge,
   type NodeChange,
 } from "@xyflow/react";
-import { Eye, HelpCircle, Lightbulb, Plus, Quote, Sparkles } from "lucide-react";
+import { FileUp, Sparkles } from "lucide-react";
 
-import { ApiError, getWorkspace, postOperations } from "./api.ts";
-import { AgentComposer } from "./components/AgentComposer.tsx";
+import { ApiError, getWorkspace, importSourceFile, postOperations } from "./api.ts";
+import { FieldDock } from "./components/FieldDock.tsx";
 import { FieldCardNode, type FieldNode } from "./components/FieldCardNode.tsx";
+import { FirstRun, type BootstrapInput } from "./components/FirstRun.tsx";
 import { Inspector } from "./components/Inspector.tsx";
-import { Sidebar } from "./components/Sidebar.tsx";
 import { SourceModal } from "./components/SourceModal.tsx";
+import { getPatternSignal } from "./sensemaking.ts";
+import { inferSourceKind } from "./source-files.ts";
 import type {
   CardKind,
   FieldOperation,
+  FieldStage,
+  Source,
   Workspace,
 } from "./shared/workspace.ts";
 
 const nodeTypes = { fieldCard: FieldCardNode };
-
-const kindLabels: Array<{ kind: CardKind; label: string; icon: typeof Quote }> = [
-  { kind: "evidence", label: "Evidence", icon: Quote },
-  { kind: "observation", label: "Observation", icon: Eye },
-  { kind: "pattern", label: "Pattern", icon: Lightbulb },
-  { kind: "question", label: "Question", icon: HelpCircle },
-];
 
 function workspaceToNodes(workspace: Workspace): FieldNode[] {
   return workspace.cards.map((card) => ({
@@ -42,6 +38,7 @@ function workspaceToNodes(workspace: Workspace): FieldNode[] {
     data: {
       card,
       source: workspace.sources.find((source) => source.id === card.sourceRef?.sourceId),
+      ...(card.kind === "pattern" ? { signal: getPatternSignal(workspace, card.id) } : {}),
     },
   }));
 }
@@ -53,7 +50,7 @@ function workspaceToEdges(workspace: Workspace): Edge[] {
     target: connection.to,
     label: connection.label,
     type: "smoothstep",
-    markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15 },
+    markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
     className: `field-edge field-edge--${connection.kind}`,
   }));
 }
@@ -61,13 +58,13 @@ function workspaceToEdges(workspace: Workspace): Edge[] {
 function starterCopy(kind: CardKind) {
   switch (kind) {
     case "evidence":
-      return { title: "Unlinked evidence", body: "Paste an exact quote or describe what was observed, then link its source." };
+      return { title: "Unlinked evidence", body: "Paste an exact excerpt or observable fact, then link its source." };
     case "observation":
-      return { title: "New observation", body: "What do you notice in the evidence?" };
+      return { title: "New observation", body: "What do you notice in the evidence—without claiming a pattern yet?" };
     case "pattern":
-      return { title: "Possible pattern", body: "What seems to repeat across multiple observations?" };
+      return { title: "Possible pattern", body: "What interpretation seems to connect multiple observations or evidence points?" };
     case "question":
-      return { title: "Open question", body: "What remains uncertain or unsupported?" };
+      return { title: "Open question", body: "What alternative, contradiction, or missing context would change the frame?" };
   }
 }
 
@@ -79,6 +76,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const [droppedFile, setDroppedFile] = useState<File | undefined>();
+  const [dragActive, setDragActive] = useState(false);
 
   const load = useCallback(async (quiet = false) => {
     try {
@@ -117,11 +116,7 @@ export default function App() {
       setBusy(true);
       setError(null);
       try {
-        const next = await postOperations({
-          baseRevision: workspace.revision,
-          actor: "human",
-          operations,
-        });
+        const next = await postOperations({ baseRevision: workspace.revision, actor: "human", operations });
         setWorkspace(next);
         setNodes(workspaceToNodes(next));
         if (successMessage) setNotice(successMessage);
@@ -139,69 +134,139 @@ export default function App() {
     [busy, load, workspace],
   );
 
+  const importFile = useCallback(async (source: Source, file: File) => {
+    if (!workspace || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await importSourceFile(workspace.revision, file, {
+        title: source.title,
+        kind: source.kind,
+        ...(source.origin ? { origin: source.origin } : {}),
+        ...(source.summary ? { summary: source.summary } : {}),
+      });
+      setWorkspace(next);
+      setNodes(workspaceToNodes(next));
+      const textLike = file.type.startsWith("text/") || /\.(txt|md|json|csv|tsv)$/i.test(file.name);
+      setNotice(textLike ? "Source added to the field" : "Source added; extraction queued for a coding agent");
+    } catch (importError) {
+      if (importError instanceof ApiError && importError.status === 409) await load(true);
+      setError(importError instanceof Error ? importError.message : "The source could not be imported.");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, load, workspace]);
+
+  const bootstrapField = useCallback(async (input: BootstrapInput) => {
+    if (!workspace || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const now = new Date().toISOString();
+      const operations: FieldOperation[] = [
+        {
+          type: "updateProject",
+          patch: {
+            name: input.name,
+            question: input.question,
+            activeStage: "forage",
+            onboardingComplete: true,
+          },
+        },
+        ...(input.context
+          ? [{
+              type: "addSource" as const,
+              source: {
+                id: `source-${crypto.randomUUID()}`,
+                title: "Starting context",
+                kind: "note" as const,
+                origin: "First-run setup",
+                summary: input.context,
+                extraction: { status: "ready" as const, method: "human-context", updatedAt: now },
+                importedAt: now,
+              },
+            }]
+          : []),
+      ];
+
+      let next = await postOperations({
+        baseRevision: workspace.revision,
+        actor: "human",
+        operations,
+      });
+
+      for (const file of input.files) {
+        next = await importSourceFile(next.revision, file, {
+          title: file.name.replace(/\.[^.]+$/, ""),
+          kind: inferSourceKind(file),
+        });
+      }
+
+      setWorkspace(next);
+      setNodes(workspaceToNodes(next));
+      setNotice(input.files.length || input.context ? "Field opened with your starting material" : "Field opened");
+    } catch (bootstrapError) {
+      await load(true);
+      setError(bootstrapError instanceof Error ? bootstrapError.message : "The field could not be opened.");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, load, workspace]);
+
   const edges = useMemo(() => (workspace ? workspaceToEdges(workspace) : []), [workspace]);
   const selectedCard = workspace?.cards.find((card) => card.id === selectedCardId) ?? null;
+  const selectedSignal = workspace && selectedCard?.kind === "pattern"
+    ? getPatternSignal(workspace, selectedCard.id)
+    : undefined;
 
   const onNodesChange = useCallback((changes: NodeChange<FieldNode>[]) => {
     setNodes((current) => applyNodeChanges(changes, current));
   }, []);
 
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      if (!connection.source || !connection.target) return;
-      const id = `connection-${crypto.randomUUID()}`;
-      void mutate(
-        [
-          {
-            type: "addConnection",
-            connection: {
-              id,
-              from: connection.source,
-              to: connection.target,
-              kind: "relates",
-              label: "relates to",
-            },
-          },
-        ],
-        "Relationship added",
-      );
-      addEdge(connection, edges);
-    },
-    [edges, mutate],
-  );
+  const onConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target) return;
+    void mutate(
+      [{
+        type: "addConnection",
+        connection: {
+          id: `connection-${crypto.randomUUID()}`,
+          from: connection.source,
+          to: connection.target,
+          kind: "relates",
+          label: "relates to",
+        },
+      }],
+      "Relationship added",
+    );
+  }, [mutate]);
 
   function addCard(kind: CardKind) {
     if (!workspace) return;
     const copy = starterCopy(kind);
-    const offset = workspace.cards.length * 34;
-    void mutate([
-      {
-        type: "addCard",
-        card: {
-          id: `card-${crypto.randomUUID()}`,
-          kind,
-          ...copy,
-          position: { x: 320 + (offset % 420), y: 120 + (offset % 300) },
-          createdBy: "human",
-        },
+    const offset = workspace.cards.length * 37;
+    void mutate([{
+      type: "addCard",
+      card: {
+        id: `card-${crypto.randomUUID()}`,
+        kind,
+        ...copy,
+        position: { x: 360 + (offset % 520), y: 180 + (offset % 340) },
+        createdBy: "human",
       },
-    ]);
+    }]);
   }
 
   async function queueAgentRequest(prompt: string) {
-    const requestId = `request-${crypto.randomUUID()}`;
     await mutate(
-      [
-        {
-          type: "addAgentRequest",
-          request: {
-            id: requestId,
-            prompt,
-            scopeCardIds: selectedCardId ? [selectedCardId] : [],
-          },
+      [{
+        type: "addAgentRequest",
+        request: {
+          id: `request-${crypto.randomUUID()}`,
+          prompt,
+          scopeCardIds: selectedCardId ? [selectedCardId] : [],
         },
-      ],
-      "Question queued. Open Codex or Claude Code in this repo to work it.",
+      }],
+      "Question queued for Codex or Claude Code",
     );
   }
 
@@ -209,6 +274,11 @@ export default function App() {
     const command = `npm run field -- context ${requestId}`;
     await navigator.clipboard.writeText(command);
     setNotice(`Copied: ${command}`);
+  }
+
+  function openSourceModal(file?: File) {
+    setDroppedFile(file);
+    setSourceModalOpen(true);
   }
 
   if (!workspace) {
@@ -222,112 +292,154 @@ export default function App() {
     );
   }
 
+  const evidenceCount = workspace.cards.filter((card) => card.kind === "evidence").length;
+  const patternCount = workspace.cards.filter((card) => card.kind === "pattern").length;
+
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand__mark"><Sparkles aria-hidden="true" size={16} /></div>
-          <div>
-            <strong>{workspace.project.name}</strong>
-            <span>problem sensemaking</span>
-          </div>
-        </div>
+    <main
+      className={`app-shell${dragActive ? " is-dragging" : ""}`}
+      onDragEnter={(event) => {
+        if (!workspace.project.onboardingComplete) return;
+        event.preventDefault();
+        setDragActive(true);
+      }}
+      onDragOver={(event) => event.preventDefault()}
+      onDragLeave={(event) => {
+        if (event.currentTarget === event.target) setDragActive(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragActive(false);
+        if (!workspace.project.onboardingComplete) return;
+        const file = event.dataTransfer.files[0];
+        if (file) openSourceModal(file);
+      }}
+    >
+      <section className="canvas-shell" aria-label="Problem field canvas">
+        <ReactFlow
+          colorMode="light"
+          deleteKeyCode={null}
+          edges={edges}
+          fitView
+          fitViewOptions={{ padding: 0.22, maxZoom: 0.95 }}
+          maxZoom={1.6}
+          minZoom={0.2}
+          nodeTypes={nodeTypes}
+          nodes={nodes}
+          onConnect={onConnect}
+          onNodeClick={(_, node) => setSelectedCardId(node.id)}
+          onNodeDragStop={(_, node) => void mutate([
+            { type: "moveCards", positions: [{ cardId: node.id, position: node.position }] },
+          ])}
+          onNodesChange={onNodesChange}
+          onPaneClick={() => setSelectedCardId(null)}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background color="#d7d9d3" gap={28} size={1} variant={BackgroundVariant.Dots} />
+          <Controls position="bottom-right" showInteractive={false} />
+        </ReactFlow>
 
-        <nav className="add-tools" aria-label="Add to field">
-          {kindLabels.map(({ kind, label, icon: Icon }) => (
-            <button key={kind} onClick={() => addCard(kind)} type="button">
-              <Icon aria-hidden="true" size={14} />
-              {label}
-            </button>
-          ))}
-          <button className="add-tools__more" onClick={() => setSourceModalOpen(true)} type="button">
-            <Plus aria-hidden="true" size={14} />
-            Source
-          </button>
-        </nav>
+        {workspace.project.onboardingComplete && (
+          <>
+            <header className="project-chip">
+              <div className="project-chip__mark"><Sparkles aria-hidden="true" size={15} /></div>
+              <div><strong>{workspace.project.name}</strong><span>{workspace.project.question}</span></div>
+            </header>
 
-        <div className="sync-status">
-          <span className={busy ? "is-busy" : ""} />
-          {busy ? "Saving" : `Local · rev ${workspace.revision}`}
-        </div>
-      </header>
+            <div className="field-summary" aria-label="Field composition">
+              <span><strong>{workspace.sources.length}</strong> sources</span>
+              <span><strong>{evidenceCount}</strong> evidence</span>
+              <span><strong>{patternCount}</strong> patterns</span>
+              <i className={busy ? "is-busy" : ""} title={busy ? "Saving" : `Saved locally · revision ${workspace.revision}`} />
+            </div>
 
-      <div className="workspace-grid">
-        <Sidebar
-          onCopyRequestCommand={(requestId) => void copyRequestCommand(requestId)}
-          onSelectCard={setSelectedCardId}
-          selectedCardId={selectedCardId}
-          workspace={workspace}
-        />
+            <FieldDock
+              busy={busy}
+              onAddCard={addCard}
+              onAddSource={() => openSourceModal()}
+              onAsk={queueAgentRequest}
+              onCopyRequestCommand={(requestId) => void copyRequestCommand(requestId)}
+              onReviewProposal={(proposalId, decision) => void mutate([
+                { type: "reviewAgentProposal", proposalId, decision },
+              ], decision === "accepted" ? "Interpretation placed on the field" : "Suggestion dismissed")}
+              onSetStage={(stage: FieldStage) => void mutate([
+                { type: "updateProject", patch: { activeStage: stage } },
+              ])}
+              onUpdateQuestion={(question) => void mutate([
+                { type: "updateProject", patch: { question } },
+              ], "Focus updated")}
+              selectedTitle={selectedCard?.title}
+              workspace={workspace}
+            />
+          </>
+        )}
 
-        <section className="canvas-shell" aria-label="Problem field canvas">
-          <ReactFlow
-            colorMode="light"
-            deleteKeyCode={null}
-            edges={edges}
-            fitView
-            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-            maxZoom={1.6}
-            minZoom={0.25}
-            nodeTypes={nodeTypes}
-            nodes={nodes}
-            onConnect={onConnect}
-            onNodeClick={(_, node) => setSelectedCardId(node.id)}
-            onNodeDragStop={(_, node) =>
-              void mutate([
-                { type: "moveCards", positions: [{ cardId: node.id, position: node.position }] },
-              ])
-            }
-            onNodesChange={onNodesChange}
-            onPaneClick={() => setSelectedCardId(null)}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background color="#d5d8d5" gap={24} size={1} variant={BackgroundVariant.Dots} />
-            <Controls position="bottom-right" showInteractive={false} />
-          </ReactFlow>
-          <div className="canvas-legend" aria-label="Card type legend">
-            {kindLabels.map(({ kind, label }) => (
-              <span key={kind}><i className={`kind-dot kind-dot--${kind}`} />{label}</span>
-            ))}
-          </div>
-          <AgentComposer
+        {workspace.project.onboardingComplete && workspace.cards.length === 0 && (
+          <section className="canvas-empty" aria-labelledby="empty-field-title">
+            <span>Empty field</span>
+            <h2 id="empty-field-title">
+              {workspace.sources.length ? "Your sources are in. What happened inside them?" : "Start with something that happened."}
+            </h2>
+            <p>
+              {workspace.sources.length
+                ? "Place one exact quote, behavior, or observable fact. Interpretation comes later."
+                : "Bring in a call, note, screenshot, recording, or document. The field will grow from inspectable evidence."}
+            </p>
+            <div>
+              <button className="canvas-empty__primary" onClick={() => workspace.sources.length ? addCard("evidence") : openSourceModal()} type="button">
+                {workspace.sources.length ? "Add first evidence" : "Add a source"}
+              </button>
+              {workspace.sources.length > 0 && (
+                <button
+                  onClick={() => void queueAgentRequest("Forage through the available sources and add only exact, source-linked evidence cards. Preserve quotes or observable details and locators; do not create observations or patterns yet.")}
+                  type="button"
+                >
+                  Ask agent to forage
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {selectedCard && (
+          <Inspector
             busy={busy}
-            onSubmit={queueAgentRequest}
-            selectedTitle={selectedCard?.title}
-          />
-          {(error || notice) && (
-            <div className={`toast ${error ? "toast--error" : ""}`}>{error ?? notice}</div>
-          )}
-        </section>
-
-        <Inspector
-          busy={busy}
-          card={selectedCard}
-          onClose={() => setSelectedCardId(null)}
-          onDelete={(cardId) => {
-            setSelectedCardId(null);
-            void mutate([{ type: "deleteCard", cardId }], "Card removed");
-          }}
-          onSave={(cardId, title, body, sourceRef) =>
-            void mutate(
-              [{
-                type: "updateCard",
-                cardId,
-                patch: { title, body, ...(sourceRef !== undefined ? { sourceRef } : {}) },
-              }],
+            card={selectedCard}
+            onClose={() => setSelectedCardId(null)}
+            onDelete={(cardId) => {
+              setSelectedCardId(null);
+              void mutate([{ type: "deleteCard", cardId }], "Card removed");
+            }}
+            onSave={(cardId, title, body, sourceRef) => void mutate(
+              [{ type: "updateCard", cardId, patch: { title, body, ...(sourceRef !== undefined ? { sourceRef } : {}) } }],
               "Card updated",
-            )
-          }
-          sources={workspace.sources}
-        />
-      </div>
+            )}
+            signal={selectedSignal}
+            sources={workspace.sources}
+          />
+        )}
+
+        {(error || notice) && <div className={`toast ${error ? "toast--error" : ""}`}>{error ?? notice}</div>}
+        {dragActive && (
+          <div className="drop-overlay">
+            <FileUp aria-hidden="true" size={24} />
+            <strong>Bring this into the field</strong>
+            <span>The raw file will stay local and separate from its interpretations.</span>
+          </div>
+        )}
+        {!workspace.project.onboardingComplete && <FirstRun busy={busy} onSubmit={bootstrapField} />}
+      </section>
+
       {sourceModalOpen && (
         <SourceModal
           busy={busy}
-          onClose={() => setSourceModalOpen(false)}
-          onCreate={async (source) => {
-            await mutate([{ type: "addSource", source }], "Source added to the field");
+          initialFile={droppedFile}
+          onClose={() => { setSourceModalOpen(false); setDroppedFile(undefined); }}
+          onCreate={async (source, file) => {
+            if (file) await importFile(source, file);
+            else await mutate([{ type: "addSource", source }], "Source added to the field");
             setSourceModalOpen(false);
+            setDroppedFile(undefined);
           }}
         />
       )}

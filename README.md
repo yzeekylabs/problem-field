@@ -2,16 +2,19 @@
 
 Problem Field is a local-first visual workspace for making sense of messy problem spaces. It keeps source material, excerpts, observations, patterns, questions, and relationships in one agent-readable model so the visual canvas and the AI never become competing sources of truth.
 
-This is an early working slice, built to answer one question: **does it feel materially better to think with evidence and an agent on the same spatial surface?**
+This is an early working slice, built to answer one question: **does it feel materially better to learn evidence-backed problem sensemaking with the sources, spatial field, and agent on one surface?**
 
 ## What works now
 
+- Work through an opinionated but recursive Field Loop: Orient, Forage, Cluster, Frame, Test, Decide.
+- Open on a blank field and bootstrap it with one focus, optional context, and starting files.
 - Arrange typed cards on an infinite canvas and connect them.
-- Paste or load text/Markdown source material locally.
+- Drag in text, image, PDF, audio, or video files locally.
 - Keep evidence visibly distinct from observations, patterns, and questions.
 - Preserve source provenance on evidence cards.
+- See pattern signal as evidence/source/contradiction composition rather than a fake score.
 - Ask a question from the canvas and place it in an agent queue.
-- Let Codex or Claude Code read and safely update the same workspace through a validated CLI.
+- Let Codex or Claude Code propose patterns and questions for explicit human review.
 - Reject stale concurrent updates instead of silently overwriting them.
 
 ## Run it
@@ -35,14 +38,16 @@ npm run field -- requests
 npm run field -- apply work/agent-ops.json
 ```
 
-Agents must use the CLI rather than editing `data/workspace.json` directly. Every mutation is schema-validated, revision-checked, locked, and atomically written.
+Agents must use the CLI rather than editing workspace JSON directly. Every mutation is schema-validated, revision-checked, locked, and atomically written.
+
+Your runtime workspace and imported assets live under gitignored `data/local/`. The checked-in `data/workspace.json` is only the blank public seed.
 
 ## Product boundary
 
 This is not a general whiteboard and not an automatic mind-map generator. The first wedge is evidence-backed problem sensemaking: moving between raw material and emerging interpretation without losing where an idea came from.
 
-See [docs/product.md](docs/product.md) and [docs/architecture.md](docs/architecture.md).
+See [docs/product.md](docs/product.md), [docs/research-foundation.md](docs/research-foundation.md), and [docs/architecture.md](docs/architecture.md).
 
 ## Status
 
-Local-only, single-user prototype. Source ingestion, multimodal extraction, live agent streaming, collaboration, and hosted sync are deliberately deferred until the core thinking loop proves useful.
+Local-only, single-user prototype. Non-text extraction is queued for the coding-agent protocol; live agent streaming, collaboration, and hosted sync are deliberately deferred until the core thinking loop proves useful.

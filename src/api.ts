@@ -35,3 +35,24 @@ export async function postOperations(input: OperationSet): Promise<Workspace> {
   }
   return response.json() as Promise<Workspace>;
 }
+
+export async function importSourceFile(
+  baseRevision: number,
+  file: File,
+  metadata: { title: string; kind: string; origin?: string; summary?: string },
+): Promise<Workspace> {
+  const body = new FormData();
+  body.set("baseRevision", String(baseRevision));
+  body.set("file", file);
+  body.set("title", metadata.title);
+  body.set("kind", metadata.kind);
+  if (metadata.origin) body.set("origin", metadata.origin);
+  if (metadata.summary) body.set("summary", metadata.summary);
+
+  const response = await fetch("/api/sources/import", { method: "POST", body });
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => ({}))) as ApiErrorBody;
+    throw new ApiError(errorBody.message ?? "The source could not be imported.", response.status, errorBody);
+  }
+  return response.json() as Promise<Workspace>;
+}

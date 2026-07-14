@@ -14,12 +14,37 @@ export const cardKindSchema = z.enum([
 ]);
 export type CardKind = z.infer<typeof cardKindSchema>;
 
+export const fieldStageSchema = z.enum([
+  "orient",
+  "forage",
+  "cluster",
+  "frame",
+  "test",
+  "decide",
+]);
+export type FieldStage = z.infer<typeof fieldStageSchema>;
+
+const sourceAssetSchema = z.object({
+  fileName: z.string().min(1).max(240),
+  originalName: z.string().min(1).max(240),
+  mimeType: z.string().min(1).max(240),
+  bytes: z.number().int().nonnegative(),
+});
+
+const extractionSchema = z.object({
+  status: z.enum(["not_needed", "queued", "ready", "failed"]),
+  method: z.string().max(120).optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
 export const sourceSchema = z.object({
   id: idSchema,
   title: z.string().min(1).max(240),
   kind: z.enum(["transcript", "note", "image", "video", "audio", "document", "other"]),
   origin: z.string().max(2_000).optional(),
   summary: z.string().max(100_000).optional(),
+  asset: sourceAssetSchema.optional(),
+  extraction: extractionSchema.optional(),
   importedAt: z.string().datetime(),
 });
 export type Source = z.infer<typeof sourceSchema>;
@@ -43,6 +68,8 @@ export const cardSchema = z.object({
 });
 export type FieldCard = z.infer<typeof cardSchema>;
 
+const addCardInputSchema = cardSchema.omit({ createdAt: true, updatedAt: true });
+
 export const connectionSchema = z.object({
   id: idSchema,
   from: idSchema,
@@ -63,23 +90,61 @@ export const agentRequestSchema = z.object({
 });
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
 
+export const agentProposalSchema = z.object({
+  id: idSchema,
+  kind: z.enum(["pattern", "question"]),
+  title: z.string().min(1).max(240),
+  rationale: z.string().min(1).max(20_000),
+  scopeCardIds: z.array(idSchema).min(1).max(100),
+  proposedCard: addCardInputSchema.extend({
+    kind: z.enum(["pattern", "question"]),
+    createdBy: z.literal("agent"),
+  }),
+  proposedConnections: z.array(connectionSchema).max(100),
+  status: z.enum(["pending", "accepted", "dismissed"]),
+  createdAt: z.string().datetime(),
+  reviewedAt: z.string().datetime().optional(),
+});
+export type AgentProposal = z.infer<typeof agentProposalSchema>;
+
 export const workspaceSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   revision: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
   project: z.object({
     name: z.string().min(1).max(120),
     question: z.string().min(1).max(1_000),
     status: z.enum(["exploring", "framing", "paused"]),
+    activeStage: fieldStageSchema,
+    onboardingComplete: z.boolean(),
   }),
   sources: z.array(sourceSchema),
   cards: z.array(cardSchema),
   connections: z.array(connectionSchema),
   agentRequests: z.array(agentRequestSchema),
+  agentProposals: z.array(agentProposalSchema),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 
-const addCardInputSchema = cardSchema.omit({ createdAt: true, updatedAt: true });
+export function parseWorkspace(input: unknown): Workspace {
+  if (!input || typeof input !== "object") return workspaceSchema.parse(input);
+  const candidate = structuredClone(input) as Record<string, unknown>;
+  const project = candidate.project && typeof candidate.project === "object"
+    ? candidate.project as Record<string, unknown>
+    : null;
+
+  if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2) {
+    candidate.agentProposals ??= [];
+    if (project) {
+      project.activeStage ??= project.status === "framing" ? "frame" : "forage";
+      project.onboardingComplete ??= true;
+    }
+    candidate.schemaVersion = 2;
+  }
+
+  return workspaceSchema.parse(candidate);
+}
+
 const updateCardPatchSchema = z.object({
   title: z.string().min(1).max(240).optional(),
   body: z.string().max(20_000).optional(),
@@ -87,6 +152,16 @@ const updateCardPatchSchema = z.object({
 });
 
 export const operationSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("updateProject"),
+    patch: z.object({
+      name: z.string().min(1).max(120).optional(),
+      question: z.string().min(1).max(1_000).optional(),
+      status: z.enum(["exploring", "framing", "paused"]).optional(),
+      activeStage: fieldStageSchema.optional(),
+      onboardingComplete: z.boolean().optional(),
+    }),
+  }),
   z.object({ type: z.literal("addCard"), card: addCardInputSchema }),
   z.object({
     type: z.literal("updateCard"),
@@ -102,6 +177,16 @@ export const operationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("deleteConnection"), connectionId: idSchema }),
   z.object({ type: z.literal("addSource"), source: sourceSchema }),
   z.object({
+    type: z.literal("updateSource"),
+    sourceId: idSchema,
+    patch: z.object({
+      title: z.string().min(1).max(240).optional(),
+      origin: z.string().max(2_000).nullable().optional(),
+      summary: z.string().max(100_000).nullable().optional(),
+      extraction: extractionSchema.optional(),
+    }),
+  }),
+  z.object({
     type: z.literal("addAgentRequest"),
     request: agentRequestSchema.omit({ createdAt: true, status: true }),
   }),
@@ -109,6 +194,15 @@ export const operationSchema = z.discriminatedUnion("type", [
     type: z.literal("resolveAgentRequest"),
     requestId: idSchema,
     response: z.string().max(20_000),
+  }),
+  z.object({
+    type: z.literal("addAgentProposal"),
+    proposal: agentProposalSchema.omit({ createdAt: true, status: true }),
+  }),
+  z.object({
+    type: z.literal("reviewAgentProposal"),
+    proposalId: idSchema,
+    decision: z.enum(["accepted", "dismissed"]),
   }),
 ]);
 export type FieldOperation = z.infer<typeof operationSchema>;
@@ -167,6 +261,24 @@ function assertReferences(workspace: Workspace) {
       }
     }
   }
+
+  for (const proposal of workspace.agentProposals) {
+    if (proposal.status !== "pending") continue;
+    const proposalCardIds = new Set([proposal.proposedCard.id]);
+    for (const cardId of proposal.scopeCardIds) {
+      if (!cardIds.has(cardId)) {
+        throw new DomainError(`Agent proposal '${proposal.id}' references missing card '${cardId}'.`);
+      }
+    }
+    for (const connection of proposal.proposedConnections) {
+      const knownIds = new Set([...cardIds, ...proposalCardIds]);
+      if (!knownIds.has(connection.from) || !knownIds.has(connection.to)) {
+        throw new DomainError(
+          `Agent proposal '${proposal.id}' contains a connection to a missing card.`,
+        );
+      }
+    }
+  }
 }
 
 export function applyOperationSet(
@@ -178,6 +290,10 @@ export function applyOperationSet(
 
   for (const operation of input.operations) {
     switch (operation.type) {
+      case "updateProject": {
+        next.project = { ...next.project, ...operation.patch };
+        break;
+      }
       case "addCard": {
         requireUniqueId(next.cards, operation.card.id, "Card");
         next.cards.push({ ...operation.card, createdAt: now, updatedAt: now });
@@ -236,6 +352,21 @@ export function applyOperationSet(
         next.sources.push(operation.source);
         break;
       }
+      case "updateSource": {
+        const source = next.sources.find((item) => item.id === operation.sourceId);
+        if (!source) throw new DomainError(`Source '${operation.sourceId}' does not exist.`);
+        if (operation.patch.title !== undefined) source.title = operation.patch.title;
+        if (operation.patch.origin !== undefined) {
+          if (operation.patch.origin === null) delete source.origin;
+          else source.origin = operation.patch.origin;
+        }
+        if (operation.patch.summary !== undefined) {
+          if (operation.patch.summary === null) delete source.summary;
+          else source.summary = operation.patch.summary;
+        }
+        if (operation.patch.extraction !== undefined) source.extraction = operation.patch.extraction;
+        break;
+      }
       case "addAgentRequest": {
         requireUniqueId(next.agentRequests, operation.request.id, "Agent request");
         next.agentRequests.push({
@@ -256,6 +387,43 @@ export function applyOperationSet(
         request.status = "resolved";
         request.response = operation.response;
         request.resolvedAt = now;
+        break;
+      }
+      case "addAgentProposal": {
+        requireUniqueId(next.agentProposals, operation.proposal.id, "Agent proposal");
+        requireUniqueId(next.cards, operation.proposal.proposedCard.id, "Proposed card");
+        if (operation.proposal.kind !== operation.proposal.proposedCard.kind) {
+          throw new DomainError("An agent proposal kind must match its proposed card kind.");
+        }
+        const proposedConnectionIds = operation.proposal.proposedConnections.map((item) => item.id);
+        if (new Set(proposedConnectionIds).size !== proposedConnectionIds.length) {
+          throw new DomainError("An agent proposal cannot contain duplicate connection IDs.");
+        }
+        next.agentProposals.push({
+          ...operation.proposal,
+          status: "pending",
+          createdAt: now,
+        });
+        break;
+      }
+      case "reviewAgentProposal": {
+        const proposal = next.agentProposals.find((item) => item.id === operation.proposalId);
+        if (!proposal) {
+          throw new DomainError(`Agent proposal '${operation.proposalId}' does not exist.`);
+        }
+        if (proposal.status !== "pending") {
+          throw new DomainError(`Agent proposal '${operation.proposalId}' has already been reviewed.`);
+        }
+        if (operation.decision === "accepted") {
+          requireUniqueId(next.cards, proposal.proposedCard.id, "Proposed card");
+          next.cards.push({ ...proposal.proposedCard, createdAt: now, updatedAt: now });
+          for (const connection of proposal.proposedConnections) {
+            requireUniqueId(next.connections, connection.id, "Proposed connection");
+            next.connections.push(connection);
+          }
+        }
+        proposal.status = operation.decision;
+        proposal.reviewedAt = now;
         break;
       }
     }

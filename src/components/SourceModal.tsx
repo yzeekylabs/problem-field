@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { FileUp, Plus, X } from "lucide-react";
 
+import { inferSourceKind } from "../source-files.ts";
 import type { Source } from "../shared/workspace.ts";
 
 type SourceModalProps = {
   busy: boolean;
+  initialFile?: File;
   onClose: () => void;
-  onCreate: (source: Source) => Promise<void>;
+  onCreate: (source: Source, file?: File) => Promise<void>;
 };
 
-export function SourceModal({ busy, onClose, onCreate }: SourceModalProps) {
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<Source["kind"]>("transcript");
+export function SourceModal({ busy, initialFile, onClose, onCreate }: SourceModalProps) {
+  const [file, setFile] = useState<File | undefined>(initialFile);
+  const [title, setTitle] = useState(initialFile?.name.replace(/\.[^.]+$/, "") ?? "");
+  const [kind, setKind] = useState<Source["kind"]>(inferSourceKind(initialFile));
   const [origin, setOrigin] = useState("");
   const [content, setContent] = useState("");
 
@@ -24,15 +27,19 @@ export function SourceModal({ busy, onClose, onCreate }: SourceModalProps) {
       ...(origin.trim() ? { origin: origin.trim() } : {}),
       ...(content.trim() ? { summary: content.trim() } : {}),
       importedAt: new Date().toISOString(),
-    });
+    }, file);
   }
 
   async function loadTextFile(file: File | undefined) {
     if (!file) return;
-    const text = await file.text();
-    setContent(text);
+    setFile(file);
+    if (file.type.startsWith("text/") || /\.(txt|md|json|csv|tsv)$/i.test(file.name)) {
+      setContent(await file.text());
+    } else {
+      setContent("");
+    }
     if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));
-    if (file.name.endsWith(".md") || file.name.endsWith(".txt")) setKind("note");
+    setKind(inferSourceKind(file));
   }
 
   return (
@@ -55,17 +62,17 @@ export function SourceModal({ busy, onClose, onCreate }: SourceModalProps) {
         </header>
 
         <p className="source-modal__intro">
-          Start with a transcript, note, or document. The original content stays separate from the evidence and interpretations you place on the canvas.
+          Raw material stays separate from the evidence and interpretations you place on the canvas. Files remain local in this repository.
         </p>
 
         <label className="file-drop">
           <FileUp aria-hidden="true" size={17} />
           <span>
-            <strong>Load a text file</strong>
-            <small>.txt, .md, or .json</small>
+            <strong>{file ? file.name : "Choose a file"}</strong>
+            <small>{file ? `${Math.max(1, Math.round(file.size / 1024))} KB · kept as raw source` : "Text, image, PDF, audio, or video · up to 50 MB"}</small>
           </span>
           <input
-            accept=".txt,.md,.json,text/plain,text/markdown,application/json"
+            accept=".txt,.md,.json,.csv,.tsv,.pdf,image/*,audio/*,video/*,text/plain,text/markdown,application/json"
             onChange={(event) => void loadTextFile(event.target.files?.[0])}
             type="file"
           />
@@ -100,10 +107,10 @@ export function SourceModal({ busy, onClose, onCreate }: SourceModalProps) {
         </label>
 
         <label>
-          <span className="field-label">Source content</span>
+          <span className="field-label">{file ? "Extracted text or notes" : "Source content"}</span>
           <textarea
             onChange={(event) => setContent(event.target.value)}
-            placeholder="Paste the transcript or notes here…"
+            placeholder={file && !content ? "Extraction will be queued for Codex or Claude Code. Add context here if useful…" : "Paste the transcript or notes here…"}
             rows={10}
             value={content}
           />

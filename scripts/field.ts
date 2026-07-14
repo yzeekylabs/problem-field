@@ -21,13 +21,16 @@ function formatContext(workspace: Workspace, requestId?: string) {
     "",
     `Revision: ${workspace.revision}`,
     `Status: ${workspace.project.status}`,
+    `Active loop stage: ${workspace.project.activeStage}`,
     `Guiding question: ${workspace.project.question}`,
     "",
     "## Sources",
   ];
 
   for (const source of workspace.sources) {
-    lines.push(`- [${source.id}] ${source.title} (${source.kind})${source.origin ? ` — ${source.origin}` : ""}`);
+    const extraction = source.extraction ? ` | extraction=${source.extraction.status}` : "";
+    const asset = source.asset ? ` | asset=data/local/assets/${source.asset.fileName}` : "";
+    lines.push(`- [${source.id}] ${source.title} (${source.kind})${source.origin ? ` — ${source.origin}` : ""}${extraction}${asset}`);
   }
 
   lines.push("", "## Cards");
@@ -58,6 +61,16 @@ function formatContext(workspace: Workspace, requestId?: string) {
     );
   }
 
+  const pendingProposals = workspace.agentProposals.filter((proposal) => proposal.status === "pending");
+  lines.push("", "## Pending agent proposals");
+  if (pendingProposals.length === 0) lines.push("- None");
+  for (const proposal of pendingProposals) {
+    lines.push(
+      `- [${proposal.id}] ${proposal.kind.toUpperCase()} — ${proposal.title} | scope=${proposal.scopeCardIds.join(",")}`,
+    );
+    lines.push(`  ${proposal.rationale.replaceAll("\n", " ")}`);
+  }
+
   if (requestId) {
     const request = workspace.agentRequests.find((item) => item.id === requestId);
     if (!request) throw new Error(`Agent request '${requestId}' does not exist.`);
@@ -67,7 +80,7 @@ function formatContext(workspace: Workspace, requestId?: string) {
   lines.push(
     "",
     "## Write protocol",
-    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit data/workspace.json directly.`,
+    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit workspace JSON directly. Use addAgentProposal for new interpretations.`,
   );
 
   return lines.join("\n");

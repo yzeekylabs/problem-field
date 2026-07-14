@@ -1,10 +1,12 @@
 # Architecture
 
-## One durable model
+## One runtime truth
 
-`data/workspace.json` is the canonical domain record. It contains sources, cards, relationships, canvas positions, and agent requests. The browser canvas is a projection of this model; agent conversations are not stored as hidden parallel state.
+`data/local/workspace.json` is the canonical runtime record. It contains the project focus, loop stage, sources, cards, relationships, canvas positions, agent requests, and agent proposals. The browser canvas and CLI are projections over the same model.
 
-All writers use the same operation pipeline:
+`data/workspace.json` is only the checked-in empty seed. On first run it is copied into the gitignored local data root. This prevents real calls, screenshots, and transcripts from becoming ordinary public-repo changes.
+
+All writers use one operation pipeline:
 
 ```text
 browser or CLI
@@ -14,37 +16,46 @@ browser or CLI
     -> revision conflict check
     -> domain invariants
     -> atomic rename
-    -> canonical workspace
+    -> canonical local workspace
 ```
 
-## Split-brain guardrails
+## Three truth zones
+
+```text
+raw source                canonical field                  provisional agent layer
+immutable local asset  -> evidence / observation /     <- requests + proposed patterns
+extracted text/version    pattern / question               (explicit accept or dismiss)
+```
+
+- Raw assets live under `data/local/assets/` and remain separate from derived extraction.
+- Evidence points back to a source and optional exact locator/quote.
+- Agent interpretations do not enter the field until a person accepts them.
+
+This is the core split-brain defense: AI conversation state, visual layout state, and source extraction state never become competing stores of meaning.
+
+## Invariants
 
 - The browser does not persist an independent canvas snapshot.
-- Agents do not edit the workspace file directly.
-- Writes fail closed when their `baseRevision` is stale.
-- Connections cannot point to missing cards.
-- Evidence source references cannot point to missing sources.
-- Source material and interpretation use different card kinds.
-- The provider boundary is the CLI protocol, not provider-specific fields in workspace data.
+- Agents do not edit workspace JSON directly.
+- Writes fail closed when `baseRevision` is stale.
+- Connections and proposal scopes cannot reference missing cards.
+- Evidence cannot reference a missing source.
+- Agent proposals carry explicit proposed cards and connections; acceptance is one validated operation.
+- Raw source files are local and gitignored by default.
+- Provider identity does not appear in the domain schema.
 
-## Components
+## Multimodal ingestion
 
-- `src/`: React and React Flow interface.
-- `src/shared/`: schema, operations, and invariants shared by every writer.
-- `server/`: local Hono API and locked atomic file store.
-- `scripts/field.ts`: agent-facing CLI.
-- `data/`: canonical workspace data. Future binary assets will live beside it and be referenced by ID.
+The local API accepts text, image, PDF, audio, and video files up to 50 MB. Text-like files are extracted deterministically. Other files are stored unchanged and create a scoped agent extraction request. The UI never pretends OCR or transcription happened when it did not.
 
-## Why React Flow
+The extraction record (`queued`, `ready`, or `failed`) belongs to the source. Later adapters can add model/version provenance without changing evidence cards.
 
-The domain is a graph with explicit typed nodes and relationships, not a freeform drawing document. React Flow provides spatial interaction while letting the repository own the semantic data model. This keeps the serialized format compact, readable, and safe for CLI agents to manipulate.
+## Provider boundary
 
-## Deferred decisions
+Codex and Claude Code consume the same repository instructions and CLI protocol. Direct Codex app-server or Claude process adapters can later stream responses into the existing request/proposal operations, but they must not introduce provider-specific workspace state.
 
-- Multimodal extraction pipeline and embeddings.
-- Direct Codex app-server integration versus non-interactive runs.
-- Claude Code process integration.
-- SQLite or event-log persistence after the file model reaches its limits.
-- Collaboration, sync, auth, and hosting.
+## Persistence evolution
 
-Those decisions should follow evidence that the core evidence-to-pattern loop is useful.
+The file store is intentionally sufficient for a local, single-user test. When collaboration or query volume requires it, the operation contract can sit over SQLite/event history and then a hosted service. The migration boundary is storage, not the product ontology.
+
+The parser migrates schema-v1 workspaces and early schema-v2 workspaces into the guided model in memory. Existing fields are marked as already onboarded, so an upgrade preserves their cards and does not replay first run.

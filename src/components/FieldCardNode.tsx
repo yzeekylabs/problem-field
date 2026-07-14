@@ -2,10 +2,12 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Bot, FileText, Lightbulb, MessageCircleQuestion, Quote } from "lucide-react";
 
 import type { FieldCard, Source } from "../shared/workspace.ts";
+import type { PatternSignal } from "../sensemaking.ts";
 
 export type FieldNodeData = {
   card: FieldCard;
   source?: Source;
+  signal?: PatternSignal;
 };
 
 export type FieldNode = Node<FieldNodeData, "fieldCard">;
@@ -18,7 +20,7 @@ const kindIcons = {
 };
 
 export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
-  const { card, source } = data;
+  const { card, source, signal } = data;
   const Icon = kindIcons[card.kind];
 
   return (
@@ -45,6 +47,12 @@ export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
         <footer className={source ? "" : "needs-source"}>
           {source ? source.title : "Needs a source"}
           {card.sourceRef?.locator ? ` · ${card.sourceRef.locator}` : ""}
+        </footer>
+      )}
+      {card.kind === "pattern" && signal && (
+        <footer className="pattern-signal">
+          <span>{signal.status}</span>
+          {signal.evidenceCount} evidence · {signal.sourceCount} {signal.sourceCount === 1 ? "source" : "sources"} · {signal.contradictionCount} contrary
         </footer>
       )}
       <Handle className="field-handle" type="source" position={Position.Right} />

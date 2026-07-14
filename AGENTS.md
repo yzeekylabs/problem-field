@@ -10,6 +10,6 @@ When the user asks you to inspect, question, organize, or modify the problem fie
 6. Apply them with `npm run field -- apply work/agent-ops.json`.
 7. Re-run `npm run field -- context` to verify the result.
 
-Prefer traceable, conservative changes. Do not invent source provenance. An agent-created interpretation must use `observation`, `pattern`, or `question`, never `evidence`, unless it quotes an existing source reference exactly.
+Prefer traceable, conservative changes. Do not invent source provenance. New agent interpretations must use `addAgentProposal` so they remain provisional until human review. Use `updateSource` for extraction results and report uncertainty or failure explicitly.
 
 The operation schema and examples are in `docs/agent-protocol.md`.

@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Bot, ExternalLink, Save, Trash2, X } from "lucide-react";
 
 import type { FieldCard, Source } from "../shared/workspace.ts";
+import type { PatternSignal } from "../sensemaking.ts";
 
 type InspectorProps = {
   card: FieldCard | null;
   sources: Source[];
   busy: boolean;
+  signal?: PatternSignal;
   onClose: () => void;
   onDelete: (cardId: string) => void;
   onSave: (
@@ -32,7 +34,7 @@ export function Inspector(props: InspectorProps) {
   return <InspectorForm key={`${card.id}:${card.updatedAt}`} {...props} card={card} />;
 }
 
-function InspectorForm({ card, sources, busy, onClose, onDelete, onSave }: InspectorProps & { card: FieldCard }) {
+function InspectorForm({ card, sources, busy, signal, onClose, onDelete, onSave }: InspectorProps & { card: FieldCard }) {
   const [title, setTitle] = useState(card.title);
   const [body, setBody] = useState(card.body);
   const [sourceId, setSourceId] = useState(card.sourceRef?.sourceId ?? "");
@@ -66,8 +68,25 @@ function InspectorForm({ card, sources, busy, onClose, onDelete, onSave }: Inspe
       {card.createdBy === "agent" && (
         <div className="agent-attribution">
           <Bot aria-hidden="true" size={15} />
-          Suggested by an agent. Keep, edit, or remove it.
+          Proposed by an agent and accepted into the field. You still own the interpretation.
         </div>
+      )}
+
+      {card.kind === "pattern" && signal && (
+        <section className="signal-panel">
+          <header><span>Signal composition</span><strong>{signal.status}</strong></header>
+          <div>
+            <span><strong>{signal.evidenceCount}</strong> evidence</span>
+            <span><strong>{signal.sourceCount}</strong> sources</span>
+            <span><strong>{signal.contradictionCount}</strong> contrary</span>
+          </div>
+          <p>
+            {signal.status === "seed" && "A useful lead, but still narrow. Add independent sources before treating recurrence as dependable."}
+            {signal.status === "emerging" && "The pattern crosses sources. Keep testing consequences, segment concentration, and alternatives."}
+            {signal.status === "grounded" && "The field contains repeated, cross-source support. This is still an interpretation, not statistical proof."}
+            {signal.status === "contested" && "Contrary material is attached. Compare explanations instead of averaging the disagreement away."}
+          </p>
+        </section>
       )}
 
       <label className="field-label" htmlFor="card-title">
