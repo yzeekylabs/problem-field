@@ -36,14 +36,17 @@ export const fieldStageSchema = z.enum([
 ]);
 export type FieldStage = z.infer<typeof fieldStageSchema>;
 
+export const decisionCriterionMaxLength = 500;
+export const decisionCriteriaMaxTotal = 8;
+
 export const decisionCriterionSchema = z.object({
   id: idSchema,
   polarity: z.enum(["continue", "reconsider"]),
-  statement: z.string().min(1).max(500),
+  statement: z.string().min(1).max(decisionCriterionMaxLength),
 });
 export type DecisionCriterion = z.infer<typeof decisionCriterionSchema>;
 
-const decisionCriteriaSchema = z.array(decisionCriterionSchema).min(2).max(8).superRefine((criteria, context) => {
+const decisionCriteriaSchema = z.array(decisionCriterionSchema).min(2).max(decisionCriteriaMaxTotal).superRefine((criteria, context) => {
   if (!criteria.some((criterion) => criterion.polarity === "continue")) {
     context.addIssue({ code: "custom", message: "Add at least one continue criterion." });
   }

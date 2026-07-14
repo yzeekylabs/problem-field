@@ -1,6 +1,13 @@
 import { useState } from "react";
-import { Bot, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { Bot, Pencil, Save } from "lucide-react";
 
+import {
+  formatCriterionBulk,
+  decisionCriteriaMaxTotal,
+  decisionCriterionMaxLength,
+  parseCriterionBulk,
+  reconcileCriterionBulk,
+} from "../criterion-bulk.ts";
 import type { DecisionReadout } from "../sensemaking.ts";
 import {
   getActiveDecisionFrame,
@@ -8,8 +15,6 @@ import {
   type DecisionFrameInput,
   type Workspace,
 } from "../shared/workspace.ts";
-
-type CriterionDraft = Pick<DecisionCriterion, "id" | "statement">;
 
 type DecisionFramePanelProps = {
   workspace: Workspace;
@@ -19,11 +24,10 @@ type DecisionFramePanelProps = {
   onReviewWithAgent: () => Promise<void>;
 };
 
-function initialCriteria(criteria: DecisionCriterion[], polarity: DecisionCriterion["polarity"]): CriterionDraft[] {
-  const matching = criteria
+function initialCriteria(criteria: DecisionCriterion[], polarity: DecisionCriterion["polarity"]) {
+  return formatCriterionBulk(criteria
     .filter((criterion) => criterion.polarity === polarity)
-    .map(({ id, statement }) => ({ id, statement }));
-  return matching.length > 0 ? matching : [{ id: `criterion-${crypto.randomUUID()}`, statement: "" }];
+    .map(({ id, statement }) => ({ id, statement })));
 }
 
 function criterionMeta(read: DecisionReadout["criterionReads"][number]) {
@@ -64,31 +68,24 @@ export function DecisionFramePanel(props: DecisionFramePanelProps) {
     setEditing(true);
   }
 
-  function updateCriterion(
-    polarity: DecisionCriterion["polarity"],
-    id: string,
-    statement: string,
-  ) {
-    const setter = polarity === "continue" ? setContinueCriteria : setReconsiderCriteria;
-    setter((current) => current.map((criterion) => criterion.id === id ? { ...criterion, statement } : criterion));
-  }
-
-  function removeCriterion(polarity: DecisionCriterion["polarity"], id: string) {
-    const setter = polarity === "continue" ? setContinueCriteria : setReconsiderCriteria;
-    setter((current) => current.filter((criterion) => criterion.id !== id));
-  }
-
   async function save() {
-    const continueItems = continueCriteria.filter((criterion) => criterion.statement.trim());
-    const reconsiderItems = reconsiderCriteria.filter((criterion) => criterion.statement.trim());
+    const currentCriteria = getActiveDecisionFrame(props.workspace)?.criteria ?? [];
+    const continueItems = reconcileCriterionBulk(
+      continueCriteria,
+      currentCriteria.filter((criterion) => criterion.polarity === "continue"),
+    );
+    const reconsiderItems = reconcileCriterionBulk(
+      reconsiderCriteria,
+      currentCriteria.filter((criterion) => criterion.polarity === "reconsider"),
+    );
     if (!decision.trim() || !hypothesis.trim() || continueItems.length === 0 || reconsiderItems.length === 0) return;
     await props.onSave({
       id: `frame-${crypto.randomUUID()}`,
       decision: decision.trim(),
       hypothesis: hypothesis.trim(),
       criteria: [
-        ...continueItems.map((criterion) => ({ ...criterion, statement: criterion.statement.trim(), polarity: "continue" as const })),
-        ...reconsiderItems.map((criterion) => ({ ...criterion, statement: criterion.statement.trim(), polarity: "reconsider" as const })),
+        ...continueItems.map((criterion) => ({ ...criterion, polarity: "continue" as const })),
+        ...reconsiderItems.map((criterion) => ({ ...criterion, polarity: "reconsider" as const })),
       ],
     });
     setEditing(false);
@@ -139,11 +136,21 @@ export function DecisionFramePanel(props: DecisionFramePanelProps) {
     );
   }
 
+  const parsedContinueCriteria = parseCriterionBulk(continueCriteria);
+  const parsedReconsiderCriteria = parseCriterionBulk(reconsiderCriteria);
+  const continueCount = parsedContinueCriteria.length;
+  const reconsiderCount = parsedReconsiderCriteria.length;
+  const continueTooLong = parsedContinueCriteria.some((criterion) => criterion.length > decisionCriterionMaxLength);
+  const reconsiderTooLong = parsedReconsiderCriteria.some((criterion) => criterion.length > decisionCriterionMaxLength);
+  const tooManyCriteria = continueCount + reconsiderCount > decisionCriteriaMaxTotal;
   const canSave = Boolean(
     decision.trim()
     && hypothesis.trim()
-    && continueCriteria.some((criterion) => criterion.statement.trim())
-    && reconsiderCriteria.some((criterion) => criterion.statement.trim()),
+    && continueCount > 0
+    && reconsiderCount > 0
+    && !continueTooLong
+    && !reconsiderTooLong
+    && !tooManyCriteria,
   );
 
   return (
@@ -181,32 +188,27 @@ export function DecisionFramePanel(props: DecisionFramePanelProps) {
         {(["continue", "reconsider"] as const).map((polarity) => {
           const criteria = polarity === "continue" ? continueCriteria : reconsiderCriteria;
           const setter = polarity === "continue" ? setContinueCriteria : setReconsiderCriteria;
+          const count = polarity === "continue" ? continueCount : reconsiderCount;
           return (
             <section key={polarity}>
               <header>
                 <div><strong>{polarity === "continue" ? "Continue if" : "Reconsider if"}</strong><small>{polarity === "continue" ? "Evidence that earns deeper investment" : "Evidence that would change the direction"}</small></div>
-                {criteria.length < 4 && (
-                  <button onClick={() => setter((current) => [...current, { id: `criterion-${crypto.randomUUID()}`, statement: "" }])} type="button">
-                    <Plus aria-hidden="true" size={13} /> Add
-                  </button>
-                )}
               </header>
-              {criteria.map((criterion) => (
-                <div className="criterion-input" key={criterion.id}>
-                  <textarea
-                    aria-label={`${polarity === "continue" ? "Continue" : "Reconsider"} criterion`}
-                    onChange={(event) => updateCriterion(polarity, criterion.id, event.target.value)}
-                    placeholder={polarity === "continue" ? "e.g. Recent workarounds recur across independent teams" : "e.g. The issue is revision history, not alternative exploration"}
-                    rows={2}
-                    value={criterion.statement}
-                  />
-                  {criteria.length > 1 && (
-                    <button aria-label="Remove criterion" onClick={() => removeCriterion(polarity, criterion.id)} type="button">
-                      <Trash2 aria-hidden="true" size={13} />
-                    </button>
-                  )}
-                </div>
-              ))}
+              <div className={`criterion-bulk${tooManyCriteria || (polarity === "continue" ? continueTooLong : reconsiderTooLong) ? " has-error" : ""}`}>
+                <textarea
+                  aria-label={`${polarity === "continue" ? "Continue" : "Reconsider"} criteria`}
+                  maxLength={decisionCriteriaMaxTotal * (decisionCriterionMaxLength + 8)}
+                  onChange={(event) => setter(event.target.value)}
+                  placeholder={polarity === "continue"
+                    ? "Paste bullets or add one criterion per line…\n• Recent workarounds recur across independent teams"
+                    : "Paste bullets or add one criterion per line…\n• The issue is revision history, not alternative exploration"}
+                  rows={5}
+                  value={criteria}
+                />
+                <small>{(polarity === "continue" ? continueTooLong : reconsiderTooLong)
+                  ? `Keep each criterion under ${decisionCriterionMaxLength} characters`
+                  : `${count || "No"} ${count === 1 ? "criterion" : "criteria"} · ${decisionCriteriaMaxTotal} total maximum`}</small>
+              </div>
             </section>
           );
         })}

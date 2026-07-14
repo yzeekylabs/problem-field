@@ -1,6 +1,12 @@
 import { useState } from "react";
-import { ArrowRight, File as FileIcon, FileUp, LockKeyhole, Plus, Trash2, X } from "lucide-react";
+import { ArrowRight, File as FileIcon, FileUp, LockKeyhole, X } from "lucide-react";
 
+import {
+  decisionCriteriaMaxTotal,
+  decisionCriterionMaxLength,
+  parseCriterionBulk,
+  reconcileCriterionBulk,
+} from "../criterion-bulk.ts";
 import { FieldLogo } from "./FieldLogo.tsx";
 import type { DecisionFrameInput } from "../shared/workspace.ts";
 
@@ -20,8 +26,8 @@ export function FirstRun({ busy, onSubmit }: FirstRunProps) {
   const [name, setName] = useState("");
   const [decision, setDecision] = useState("");
   const [hypothesis, setHypothesis] = useState("");
-  const [continueCriteria, setContinueCriteria] = useState([{ id: `criterion-${crypto.randomUUID()}`, statement: "" }]);
-  const [reconsiderCriteria, setReconsiderCriteria] = useState([{ id: `criterion-${crypto.randomUUID()}`, statement: "" }]);
+  const [continueCriteria, setContinueCriteria] = useState("");
+  const [reconsiderCriteria, setReconsiderCriteria] = useState("");
   const [context, setContext] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
@@ -37,27 +43,19 @@ export function FirstRun({ busy, onSubmit }: FirstRunProps) {
     });
   }
 
-  function updateCriterion(
-    polarity: "continue" | "reconsider",
-    id: string,
-    statement: string,
-  ) {
-    const setter = polarity === "continue" ? setContinueCriteria : setReconsiderCriteria;
-    setter((current) => current.map((criterion) => criterion.id === id ? { ...criterion, statement } : criterion));
-  }
-
-  function removeCriterion(polarity: "continue" | "reconsider", id: string) {
-    const setter = polarity === "continue" ? setContinueCriteria : setReconsiderCriteria;
-    setter((current) => current.filter((criterion) => criterion.id !== id));
-  }
-
-  const readyContinueCriteria = continueCriteria.filter((criterion) => criterion.statement.trim());
-  const readyReconsiderCriteria = reconsiderCriteria.filter((criterion) => criterion.statement.trim());
+  const readyContinueCriteria = parseCriterionBulk(continueCriteria);
+  const readyReconsiderCriteria = parseCriterionBulk(reconsiderCriteria);
+  const continueTooLong = readyContinueCriteria.some((criterion) => criterion.length > decisionCriterionMaxLength);
+  const reconsiderTooLong = readyReconsiderCriteria.some((criterion) => criterion.length > decisionCriterionMaxLength);
+  const tooManyCriteria = readyContinueCriteria.length + readyReconsiderCriteria.length > decisionCriteriaMaxTotal;
   const canOpen = Boolean(
     decision.trim()
     && hypothesis.trim()
     && readyContinueCriteria.length > 0
-    && readyReconsiderCriteria.length > 0,
+    && readyReconsiderCriteria.length > 0
+    && !continueTooLong
+    && !reconsiderTooLong
+    && !tooManyCriteria,
   );
 
   return (
@@ -117,32 +115,27 @@ export function FirstRun({ busy, onSubmit }: FirstRunProps) {
             {(["continue", "reconsider"] as const).map((polarity) => {
               const criteria = polarity === "continue" ? continueCriteria : reconsiderCriteria;
               const setter = polarity === "continue" ? setContinueCriteria : setReconsiderCriteria;
+              const parsed = polarity === "continue" ? readyContinueCriteria : readyReconsiderCriteria;
               return (
                 <section key={polarity}>
                   <header>
                     <div><strong>{polarity === "continue" ? "Continue if" : "Reconsider if"}</strong><small>{polarity === "continue" ? "Evidence that earns deeper investment" : "Evidence that changes the direction"}</small></div>
-                    {criteria.length < 4 && (
-                      <button onClick={() => setter((current) => [...current, { id: `criterion-${crypto.randomUUID()}`, statement: "" }])} type="button">
-                        <Plus aria-hidden="true" size={12} /> Add
-                      </button>
-                    )}
                   </header>
-                  {criteria.map((criterion) => (
-                    <div className="first-run__criterion" key={criterion.id}>
-                      <textarea
-                        aria-label={`${polarity === "continue" ? "Continue" : "Reconsider"} criterion`}
-                        onChange={(event) => updateCriterion(polarity, criterion.id, event.target.value)}
-                        placeholder={polarity === "continue" ? "Recent workarounds recur across independent teams" : "The issue is revision history, not alternative exploration"}
-                        rows={2}
-                        value={criterion.statement}
-                      />
-                      {criteria.length > 1 && (
-                        <button aria-label="Remove criterion" onClick={() => removeCriterion(polarity, criterion.id)} type="button">
-                          <Trash2 aria-hidden="true" size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  <div className={`criterion-bulk${tooManyCriteria || (polarity === "continue" ? continueTooLong : reconsiderTooLong) ? " has-error" : ""}`}>
+                    <textarea
+                      aria-label={`${polarity === "continue" ? "Continue" : "Reconsider"} criteria`}
+                      maxLength={decisionCriteriaMaxTotal * (decisionCriterionMaxLength + 8)}
+                      onChange={(event) => setter(event.target.value)}
+                      placeholder={polarity === "continue"
+                        ? "Paste bullets or add one criterion per line…\n• Recent workarounds recur across independent teams"
+                        : "Paste bullets or add one criterion per line…\n• The issue is revision history, not alternative exploration"}
+                      rows={5}
+                      value={criteria}
+                    />
+                    <small>{(polarity === "continue" ? continueTooLong : reconsiderTooLong)
+                      ? `Keep each criterion under ${decisionCriterionMaxLength} characters`
+                      : `${parsed.length || "No"} ${parsed.length === 1 ? "criterion" : "criteria"} · ${decisionCriteriaMaxTotal} total maximum`}</small>
+                  </div>
                 </section>
               );
             })}
@@ -213,8 +206,8 @@ export function FirstRun({ busy, onSubmit }: FirstRunProps) {
                 decision: decision.trim(),
                 hypothesis: hypothesis.trim(),
                 criteria: [
-                  ...readyContinueCriteria.map((criterion) => ({ ...criterion, statement: criterion.statement.trim(), polarity: "continue" as const })),
-                  ...readyReconsiderCriteria.map((criterion) => ({ ...criterion, statement: criterion.statement.trim(), polarity: "reconsider" as const })),
+                  ...reconcileCriterionBulk(continueCriteria, []).map((criterion) => ({ ...criterion, polarity: "continue" as const })),
+                  ...reconcileCriterionBulk(reconsiderCriteria, []).map((criterion) => ({ ...criterion, polarity: "reconsider" as const })),
                 ],
               },
               context: context.trim(),

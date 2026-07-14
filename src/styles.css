@@ -295,9 +295,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .decision-criteria-editor header > div { display: grid; gap: 2px; }
 .decision-criteria-editor header strong { font-size: 9px; }
 .decision-criteria-editor header small { color: #858a82; font-size: 7px; }
-.criterion-input { position: relative; margin-top: 6px; }
-.criterion-input textarea { padding-right: 29px; }
-.criterion-input > button { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; padding: 0; border: 0; color: #8a6c67; background: transparent; }
+.criterion-bulk { display: grid; gap: 5px; margin-top: 7px; }
+.criterion-bulk textarea { min-height: 92px; }
+.criterion-bulk > small { color: #8a8f87; font-size: 7px; text-align: right; }
+.criterion-bulk.has-error textarea { border-color: #b98272; box-shadow: 0 0 0 3px rgba(156, 91, 73, .07); }
+.criterion-bulk.has-error > small { color: var(--danger); }
 .decision-frame__actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .decision-frame__actions > span { color: #7e857c; font-size: 7px; line-height: 1.45; }
 .decision-frame__actions button.decision-frame__save { border-color: var(--moss); color: #f8faf8; background: var(--moss); }
@@ -516,10 +518,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .first-run__bar section > header strong { font-size: 9px; }
 .first-run__bar section > header small { color: #868b83; font-size: 7px; }
 .first-run__bar button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 7px; border: 1px solid #d7d5ca; border-radius: 7px; color: #637067; background: #faf9f4; font-size: 7px; cursor: pointer; }
-.first-run__criterion { position: relative; margin-top: 7px; }
-.first-run__criterion textarea, .first-run__context textarea { width: 100%; padding: 8px 9px; border: 1px solid #d8d4c8; border-radius: 8px; color: var(--ink); background: #fffef9; font-size: 9px; line-height: 1.45; resize: vertical; }
-.first-run__criterion textarea { padding-right: 28px; }
-.first-run__criterion > button { position: absolute; top: 5px; right: 5px; display: grid; width: 21px; height: 21px; place-items: center; padding: 0; border: 0; color: #8d6c67; background: transparent; }
+.first-run__bar .criterion-bulk textarea, .first-run__context textarea { width: 100%; padding: 8px 9px; border: 1px solid #d8d4c8; border-radius: 8px; color: var(--ink); background: #fffef9; font-size: 9px; line-height: 1.45; resize: vertical; }
 .first-run__context { display: grid; gap: 6px; margin-top: 14px; }
 .first-run__context > span { color: #616960; font-size: 8px; font-weight: 650; letter-spacing: .065em; text-transform: uppercase; }
 .first-run__context > span small { color: #92978e; font-size: inherit; font-weight: 450; letter-spacing: 0; text-transform: none; }
