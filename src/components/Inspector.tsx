@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { Bot, ExternalLink, Save, Trash2, X } from "lucide-react";
 
-import type { FieldCard, Source } from "../shared/workspace.ts";
+import type {
+  CriterionLinkInput,
+  DecisionFrame,
+  FieldCard,
+  Source,
+} from "../shared/workspace.ts";
 import type { PatternSignal } from "../sensemaking.ts";
 
 type InspectorProps = {
   card: FieldCard | null;
   sources: Source[];
+  activeDecisionFrame?: DecisionFrame;
+  criterionLinks: CriterionLinkInput[];
   busy: boolean;
   signal?: PatternSignal;
   onClose: () => void;
@@ -16,6 +23,7 @@ type InspectorProps = {
     title: string,
     body: string,
     sourceRef?: FieldCard["sourceRef"] | null,
+    criterionLinks?: CriterionLinkInput[],
   ) => void;
 };
 
@@ -31,15 +39,37 @@ export function Inspector(props: InspectorProps) {
     );
   }
 
-  return <InspectorForm key={`${card.id}:${card.updatedAt}`} {...props} card={card} />;
+  const criterionStateKey = props.criterionLinks
+    .map((link) => `${link.criterionId}:${link.stance}`)
+    .join("|");
+  return (
+    <InspectorForm
+      key={`${card.id}:${card.updatedAt}:${props.activeDecisionFrame?.id ?? "unframed"}:${criterionStateKey}`}
+      {...props}
+      card={card}
+    />
+  );
 }
 
-function InspectorForm({ card, sources, busy, signal, onClose, onDelete, onSave }: InspectorProps & { card: FieldCard }) {
+function InspectorForm({
+  card,
+  sources,
+  activeDecisionFrame,
+  criterionLinks,
+  busy,
+  signal,
+  onClose,
+  onDelete,
+  onSave,
+}: InspectorProps & { card: FieldCard }) {
   const [title, setTitle] = useState(card.title);
   const [body, setBody] = useState(card.body);
   const [sourceId, setSourceId] = useState(card.sourceRef?.sourceId ?? "");
   const [locator, setLocator] = useState(card.sourceRef?.locator ?? "");
   const [quote, setQuote] = useState(card.sourceRef?.quote ?? "");
+  const [criterionStances, setCriterionStances] = useState<Record<string, CriterionLinkInput["stance"] | "">>(
+    () => Object.fromEntries(criterionLinks.map((link) => [link.criterionId, link.stance])),
+  );
 
   const source = sources.find((item) => item.id === sourceId);
   const sourceRef = sourceId
@@ -50,11 +80,16 @@ function InspectorForm({ card, sources, busy, signal, onClose, onDelete, onSave 
       }
     : null;
   const originalSourceRef = card.sourceRef ?? null;
+  const nextCriterionLinks = activeDecisionFrame?.criteria.flatMap((criterion) => {
+    const stance = criterionStances[criterion.id];
+    return stance ? [{ criterionId: criterion.id, stance }] : [];
+  }) ?? [];
 
   const isDirty =
     title !== card.title ||
     body !== card.body ||
-    JSON.stringify(sourceRef) !== JSON.stringify(originalSourceRef);
+    JSON.stringify(sourceRef) !== JSON.stringify(originalSourceRef) ||
+    JSON.stringify(nextCriterionLinks) !== JSON.stringify(criterionLinks);
 
   return (
     <aside className="inspector">
@@ -151,11 +186,48 @@ function InspectorForm({ card, sources, busy, signal, onClose, onDelete, onSave 
         </section>
       )}
 
+      {activeDecisionFrame && card.kind !== "question" && (
+        <section className="decision-relevance">
+          <div className="section-label">Decision relevance</div>
+          <p>Accept only links you can inspect and defend. Agent suggestions stay provisional until you set them here.</p>
+          {(["continue", "reconsider"] as const).map((polarity) => (
+            <div className="decision-relevance__group" key={polarity}>
+              <span>{polarity === "continue" ? "Continue if" : "Reconsider if"}</span>
+              {activeDecisionFrame.criteria
+                .filter((criterion) => criterion.polarity === polarity)
+                .map((criterion) => (
+                  <label key={criterion.id}>
+                    <strong>{criterion.statement}</strong>
+                    <select
+                      aria-label={`Relevance to ${criterion.statement}`}
+                      onChange={(event) => setCriterionStances((current) => ({
+                        ...current,
+                        [criterion.id]: event.target.value as CriterionLinkInput["stance"] | "",
+                      }))}
+                      value={criterionStances[criterion.id] ?? ""}
+                    >
+                      <option value="">Not linked</option>
+                      <option value="supports">Supports</option>
+                      <option value="challenges">Challenges</option>
+                    </select>
+                  </label>
+                ))}
+            </div>
+          ))}
+        </section>
+      )}
+
       <div className="inspector__actions">
         <button
           className="primary-button"
           disabled={busy || !isDirty || !title.trim()}
-          onClick={() => onSave(card.id, title.trim(), body, card.kind === "evidence" ? sourceRef : undefined)}
+          onClick={() => onSave(
+            card.id,
+            title.trim(),
+            body,
+            card.kind === "evidence" ? sourceRef : undefined,
+            nextCriterionLinks,
+          )}
           type="button"
         >
           <Save aria-hidden="true" size={15} />

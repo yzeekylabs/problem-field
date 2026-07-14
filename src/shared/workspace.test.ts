@@ -11,7 +11,7 @@ const now = "2026-07-14T04:00:00.000Z";
 
 function workspace(): Workspace {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     revision: 2,
     updatedAt: now,
     project: {
@@ -35,6 +35,8 @@ function workspace(): Workspace {
       },
     ],
     connections: [],
+    decisionFrames: [],
+    criterionLinks: [],
     agentRequests: [],
     agentProposals: [],
   };
@@ -51,10 +53,12 @@ describe("applyOperationSet", () => {
 
     const migrated = parseWorkspace(legacy);
 
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(5);
     expect(migrated.project.activeStage).toBe("forage");
     expect(migrated.project.onboardingComplete).toBe(true);
     expect(migrated.agentProposals).toEqual([]);
+    expect(migrated.decisionFrames).toEqual([]);
+    expect(migrated.criterionLinks).toEqual([]);
   });
 
   it("applies a valid card and connection transaction", () => {
@@ -394,5 +398,143 @@ describe("applyOperationSet", () => {
       }],
     });
     expect(result.sources[0].externalRef?.resourceId).toBe("ENG-42");
+  });
+
+  it("keeps the decision frame human-owned and versioned", () => {
+    const frame = {
+      id: "frame-1",
+      decision: "Should we continue discovery?",
+      hypothesis: "Teams lose context across research tools.",
+      criteria: [
+        { id: "continue-1", polarity: "continue" as const, statement: "Recent workarounds recur across teams." },
+        { id: "reconsider-1", polarity: "reconsider" as const, statement: "The issue is limited to one workflow." },
+      ],
+    };
+    expect(() => applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "agent",
+      operations: [{ type: "setDecisionFrame", frame }],
+    })).toThrow("explicit human review");
+
+    const framed = applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{ type: "setDecisionFrame", frame }],
+    }, now);
+    expect(framed.decisionFrames[0]).toMatchObject({ version: 1, createdBy: "human" });
+  });
+
+  it("preserves links only when a versioned criterion is unchanged", () => {
+    const framed = applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{
+        type: "setDecisionFrame",
+        frame: {
+          id: "frame-1",
+          decision: "Should we continue discovery?",
+          hypothesis: "Teams lose context across tools.",
+          criteria: [
+            { id: "continue-1", polarity: "continue", statement: "Workarounds recur." },
+            { id: "reconsider-1", polarity: "reconsider", statement: "The issue is isolated." },
+          ],
+        },
+      }],
+    });
+    const linked = applyOperationSet(framed, {
+      baseRevision: 3,
+      actor: "human",
+      operations: [{
+        type: "setCriterionLinksForCard",
+        cardId: "a",
+        links: [
+          { criterionId: "continue-1", stance: "supports" },
+          { criterionId: "reconsider-1", stance: "challenges" },
+        ],
+      }],
+    });
+    const reframed = applyOperationSet(linked, {
+      baseRevision: 4,
+      actor: "human",
+      operations: [{
+        type: "setDecisionFrame",
+        frame: {
+          id: "frame-2",
+          decision: "Should we continue discovery?",
+          hypothesis: "Teams lose context across tools.",
+          criteria: [
+            { id: "continue-1", polarity: "continue", statement: "Workarounds recur." },
+            { id: "reconsider-1", polarity: "reconsider", statement: "The issue is isolated to sales teams." },
+          ],
+        },
+      }],
+    });
+
+    expect(reframed.decisionFrames.at(-1)?.version).toBe(2);
+    expect(reframed.criterionLinks).toEqual([
+      expect.objectContaining({ cardId: "a", criterionId: "continue-1" }),
+    ]);
+  });
+
+  it("keeps source research context and criterion links outside agent authority", () => {
+    const withSource = applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{
+        type: "addSource",
+        source: { id: "call-1", title: "Customer call", kind: "transcript", importedAt: now },
+      }],
+    });
+    expect(() => applyOperationSet(withSource, {
+      baseRevision: 3,
+      actor: "agent",
+      operations: [{
+        type: "setSourceResearchQuality",
+        sourceId: "call-1",
+        assessment: { transcriptFidelity: "spot_checked", sessionEvidence: "behavior_rich" },
+      }],
+    })).toThrow("explicit human review");
+
+    const assessed = applyOperationSet(withSource, {
+      baseRevision: 3,
+      actor: "human",
+      operations: [{
+        type: "setSourceResearchQuality",
+        sourceId: "call-1",
+        assessment: { transcriptFidelity: "spot_checked", sessionEvidence: "behavior_rich" },
+      }],
+    }, now);
+    expect(assessed.sources[0].researchQuality).toMatchObject({
+      transcriptFidelity: "spot_checked",
+      sessionEvidence: "behavior_rich",
+      updatedBy: "human",
+    });
+  });
+
+  it("does not let an open question count as decision evidence", () => {
+    const current = workspace();
+    current.cards[0].kind = "question";
+    current.decisionFrames = [{
+      id: "frame-1",
+      decision: "Should we continue?",
+      hypothesis: "The problem recurs.",
+      criteria: [
+        { id: "continue-1", polarity: "continue", statement: "It recurs." },
+        { id: "reconsider-1", polarity: "reconsider", statement: "It is isolated." },
+      ],
+      version: 1,
+      createdBy: "human",
+      createdAt: now,
+    }];
+
+    expect(() => applyOperationSet(current, {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{
+        type: "setCriterionLinksForCard",
+        cardId: "a",
+        links: [{ criterionId: "continue-1", stance: "supports" }],
+      }],
+    })).toThrow("Open questions cannot count");
   });
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 
-import { operationSetSchema, type Workspace } from "../src/shared/workspace.ts";
+import { getActiveDecisionFrame, operationSetSchema, type Workspace } from "../src/shared/workspace.ts";
 import { readWorkspace, writeOperations } from "../server/store.ts";
 
 function printHelp() {
@@ -16,6 +16,7 @@ Usage:
 }
 
 function formatContext(workspace: Workspace, requestId?: string) {
+  const decisionFrame = getActiveDecisionFrame(workspace);
   const lines = [
     `# ${workspace.project.name}`,
     "",
@@ -27,6 +28,16 @@ function formatContext(workspace: Workspace, requestId?: string) {
       ? [`Visual heading: ${workspace.project.display.title} — ${workspace.project.display.summary}`]
       : []),
     "",
+    "## Human-owned decision frame",
+    ...(decisionFrame
+      ? [
+          `Version: ${decisionFrame.version}`,
+          `Decision: ${decisionFrame.decision}`,
+          `Working hypothesis: ${decisionFrame.hypothesis}`,
+          ...decisionFrame.criteria.map((criterion) => `- [${criterion.id}] ${criterion.polarity.toUpperCase()} IF — ${criterion.statement}`),
+        ]
+      : ["- Not set. The agent may critique a draft in its response, but only the user can agree this frame."]),
+    "",
     "## Sources",
   ];
 
@@ -36,7 +47,10 @@ function formatContext(workspace: Workspace, requestId?: string) {
     const external = source.externalRef
       ? ` | connector=${source.externalRef.connectorId} | resource=${source.externalRef.resourceId} | retrieved=${source.externalRef.retrievedAt}`
       : "";
-    lines.push(`- [${source.id}] ${source.title} (${source.kind})${source.origin ? ` — ${source.origin}` : ""}${extraction}${asset}${external}`);
+    const quality = source.researchQuality
+      ? ` | human-context=transcript:${source.researchQuality.transcriptFidelity ?? "unassessed"},session:${source.researchQuality.sessionEvidence ?? "unassessed"}${source.researchQuality.note ? `,note:${source.researchQuality.note.replaceAll("\n", " ")}` : ""}`
+      : "";
+    lines.push(`- [${source.id}] ${source.title} (${source.kind})${source.origin ? ` — ${source.origin}` : ""}${extraction}${asset}${external}${quality}`);
   }
 
   lines.push("", "## Cards");
@@ -57,6 +71,12 @@ function formatContext(workspace: Workspace, requestId?: string) {
     lines.push(
       `- ${connection.from} --${connection.kind}${connection.label ? `:${connection.label}` : ""}--> ${connection.to}`,
     );
+  }
+
+  lines.push("", "## Human-accepted decision evidence links");
+  if (workspace.criterionLinks.length === 0) lines.push("- None");
+  for (const link of workspace.criterionLinks) {
+    lines.push(`- card=${link.cardId} --${link.stance}--> criterion=${link.criterionId}`);
   }
 
   const activeRequests = workspace.agentRequests.filter((request) => request.status === "queued" || request.status === "running");
@@ -87,7 +107,7 @@ function formatContext(workspace: Workspace, requestId?: string) {
   lines.push(
     "",
     "## Write protocol",
-    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit workspace JSON directly. Use addAgentProposal for new interpretations. Keep full content intact; add display copy (title <= 60 characters, summary <= 120 characters) for concise visual surfaces.`,
+    `Create an operation set with baseRevision ${workspace.revision}, then apply it through the CLI. Never edit workspace JSON directly. Use addAgentProposal for new interpretations. Keep full content intact; add display copy (title <= 60 characters, summary <= 120 characters) for concise visual surfaces. The agent may inspect and critique the decision frame, source research context, and accepted criterion links, but must never write setDecisionFrame, setSourceResearchQuality, or setCriterionLinksForCard operations.`,
   );
 
   return lines.join("\n");

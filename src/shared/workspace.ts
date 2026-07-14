@@ -36,6 +36,66 @@ export const fieldStageSchema = z.enum([
 ]);
 export type FieldStage = z.infer<typeof fieldStageSchema>;
 
+export const decisionCriterionSchema = z.object({
+  id: idSchema,
+  polarity: z.enum(["continue", "reconsider"]),
+  statement: z.string().min(1).max(500),
+});
+export type DecisionCriterion = z.infer<typeof decisionCriterionSchema>;
+
+const decisionCriteriaSchema = z.array(decisionCriterionSchema).min(2).max(8).superRefine((criteria, context) => {
+  if (!criteria.some((criterion) => criterion.polarity === "continue")) {
+    context.addIssue({ code: "custom", message: "Add at least one continue criterion." });
+  }
+  if (!criteria.some((criterion) => criterion.polarity === "reconsider")) {
+    context.addIssue({ code: "custom", message: "Add at least one reconsider criterion." });
+  }
+  if (new Set(criteria.map((criterion) => criterion.id)).size !== criteria.length) {
+    context.addIssue({ code: "custom", message: "Decision criteria must have unique IDs." });
+  }
+});
+
+export const decisionFrameInputSchema = z.object({
+  id: idSchema,
+  decision: z.string().min(1).max(1_000),
+  hypothesis: z.string().min(1).max(2_000),
+  criteria: decisionCriteriaSchema,
+});
+export type DecisionFrameInput = z.infer<typeof decisionFrameInputSchema>;
+
+export const decisionFrameSchema = decisionFrameInputSchema.extend({
+  version: z.number().int().positive(),
+  createdBy: z.literal("human"),
+  createdAt: z.string().datetime(),
+});
+export type DecisionFrame = z.infer<typeof decisionFrameSchema>;
+
+export const criterionLinkInputSchema = z.object({
+  criterionId: idSchema,
+  stance: z.enum(["supports", "challenges"]),
+});
+export type CriterionLinkInput = z.infer<typeof criterionLinkInputSchema>;
+
+export const criterionLinkSchema = criterionLinkInputSchema.extend({
+  cardId: idSchema,
+  createdBy: z.literal("human"),
+  updatedAt: z.string().datetime(),
+});
+export type CriterionLink = z.infer<typeof criterionLinkSchema>;
+
+export const sourceResearchQualityInputSchema = z.object({
+  transcriptFidelity: z.enum(["unreviewed", "spot_checked", "needs_review"]).optional(),
+  sessionEvidence: z.enum(["unassessed", "behavior_rich", "mixed", "mostly_hypothetical"]).optional(),
+  note: z.string().max(2_000).optional(),
+});
+export type SourceResearchQualityInput = z.infer<typeof sourceResearchQualityInputSchema>;
+
+export const sourceResearchQualitySchema = sourceResearchQualityInputSchema.extend({
+  updatedBy: z.literal("human"),
+  updatedAt: z.string().datetime(),
+});
+export type SourceResearchQuality = z.infer<typeof sourceResearchQualitySchema>;
+
 const sourceAssetSchema = z.object({
   fileName: z.string().min(1).max(240),
   originalName: z.string().min(1).max(240),
@@ -66,6 +126,7 @@ export const sourceSchema = z.object({
   asset: sourceAssetSchema.optional(),
   externalRef: externalSourceRefSchema.optional(),
   extraction: extractionSchema.optional(),
+  researchQuality: sourceResearchQualitySchema.optional(),
   importedAt: z.string().datetime(),
 });
 export type Source = z.infer<typeof sourceSchema>;
@@ -136,7 +197,7 @@ export const agentProposalSchema = z.object({
 export type AgentProposal = z.infer<typeof agentProposalSchema>;
 
 export const workspaceSchema = z.object({
-  schemaVersion: z.literal(4),
+  schemaVersion: z.literal(5),
   revision: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
   project: z.object({
@@ -150,6 +211,8 @@ export const workspaceSchema = z.object({
   sources: z.array(sourceSchema),
   cards: z.array(cardSchema),
   connections: z.array(connectionSchema),
+  decisionFrames: z.array(decisionFrameSchema),
+  criterionLinks: z.array(criterionLinkSchema),
   agentRequests: z.array(agentRequestSchema),
   agentProposals: z.array(agentProposalSchema),
 });
@@ -162,8 +225,16 @@ export function parseWorkspace(input: unknown): Workspace {
     ? candidate.project as Record<string, unknown>
     : null;
 
-  if (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3 || candidate.schemaVersion === 4) {
+  if (
+    candidate.schemaVersion === 1
+    || candidate.schemaVersion === 2
+    || candidate.schemaVersion === 3
+    || candidate.schemaVersion === 4
+    || candidate.schemaVersion === 5
+  ) {
     candidate.agentProposals ??= [];
+    candidate.decisionFrames ??= [];
+    candidate.criterionLinks ??= [];
     if (project) {
       project.activeStage ??= project.status === "framing" ? "frame" : "forage";
       project.onboardingComplete ??= true;
@@ -177,7 +248,7 @@ export function parseWorkspace(input: unknown): Workspace {
       if (request.resolvedAt && !request.finishedAt) request.finishedAt = request.resolvedAt;
       delete request.resolvedAt;
     }
-    candidate.schemaVersion = 4;
+    candidate.schemaVersion = 5;
   }
 
   return workspaceSchema.parse(candidate);
@@ -225,6 +296,20 @@ export const operationSchema = z.discriminatedUnion("type", [
       summary: z.string().max(100_000).nullable().optional(),
       extraction: extractionSchema.optional(),
     }),
+  }),
+  z.object({
+    type: z.literal("setSourceResearchQuality"),
+    sourceId: idSchema,
+    assessment: sourceResearchQualityInputSchema.nullable(),
+  }),
+  z.object({
+    type: z.literal("setDecisionFrame"),
+    frame: decisionFrameInputSchema,
+  }),
+  z.object({
+    type: z.literal("setCriterionLinksForCard"),
+    cardId: idSchema,
+    links: z.array(criterionLinkInputSchema).max(8),
   }),
   z.object({
     type: z.literal("addAgentRequest"),
@@ -300,6 +385,16 @@ function requireCard(workspace: Workspace, cardId: string) {
   return card;
 }
 
+function requireHuman(actor: OperationSet["actor"], action: string) {
+  if (actor !== "human") {
+    throw new DomainError(`${action} requires explicit human review.`);
+  }
+}
+
+export function getActiveDecisionFrame(workspace: Workspace) {
+  return workspace.decisionFrames?.at(-1);
+}
+
 function assertReferences(workspace: Workspace) {
   const sourceIds = new Set(workspace.sources.map((source) => source.id));
   const cardIds = new Set(workspace.cards.map((card) => card.id));
@@ -309,6 +404,18 @@ function assertReferences(workspace: Workspace) {
       throw new DomainError(
         `Card '${card.id}' references missing source '${card.sourceRef.sourceId}'.`,
       );
+    }
+  }
+
+  const activeCriterionIds = new Set(
+    getActiveDecisionFrame(workspace)?.criteria.map((criterion) => criterion.id) ?? [],
+  );
+  for (const link of workspace.criterionLinks) {
+    if (!cardIds.has(link.cardId)) {
+      throw new DomainError(`Criterion link references missing card '${link.cardId}'.`);
+    }
+    if (!activeCriterionIds.has(link.criterionId)) {
+      throw new DomainError(`Criterion link references inactive criterion '${link.criterionId}'.`);
     }
   }
 
@@ -417,6 +524,7 @@ export function applyOperationSet(
           ...request,
           scopeCardIds: request.scopeCardIds.filter((cardId) => cardId !== operation.cardId),
         }));
+        next.criterionLinks = next.criterionLinks.filter((link) => link.cardId !== operation.cardId);
         break;
       }
       case "addConnection": {
@@ -453,6 +561,73 @@ export function applyOperationSet(
           else source.summary = operation.patch.summary;
         }
         if (operation.patch.extraction !== undefined) source.extraction = operation.patch.extraction;
+        break;
+      }
+      case "setSourceResearchQuality": {
+        requireHuman(input.actor, "Research quality assessment");
+        const source = next.sources.find((item) => item.id === operation.sourceId);
+        if (!source) throw new DomainError(`Source '${operation.sourceId}' does not exist.`);
+        if (operation.assessment === null) delete source.researchQuality;
+        else {
+          source.researchQuality = {
+            ...operation.assessment,
+            updatedBy: "human",
+            updatedAt: now,
+          };
+        }
+        break;
+      }
+      case "setDecisionFrame": {
+        requireHuman(input.actor, "Decision frame changes");
+        requireUniqueId(next.decisionFrames, operation.frame.id, "Decision frame");
+        const previous = getActiveDecisionFrame(next);
+        const previousCriteria = new Map(previous?.criteria.map((criterion) => [criterion.id, criterion]));
+        const unchangedCriterionIds = new Set(operation.frame.criteria.flatMap((criterion) => {
+          const earlier = previousCriteria.get(criterion.id);
+          return earlier
+            && earlier.polarity === criterion.polarity
+            && earlier.statement === criterion.statement
+            ? [criterion.id]
+            : [];
+        }));
+        next.criterionLinks = next.criterionLinks.filter(
+          (link) => unchangedCriterionIds.has(link.criterionId),
+        );
+        next.decisionFrames.push({
+          ...operation.frame,
+          version: (previous?.version ?? 0) + 1,
+          createdBy: "human",
+          createdAt: now,
+        });
+        break;
+      }
+      case "setCriterionLinksForCard": {
+        requireHuman(input.actor, "Decision evidence links");
+        const card = requireCard(next, operation.cardId);
+        if (card.kind === "question" && operation.links.length > 0) {
+          throw new DomainError("Open questions cannot count as decision evidence.");
+        }
+        const frame = getActiveDecisionFrame(next);
+        if (!frame) throw new DomainError("Set the decision frame before linking evidence to it.");
+        const activeCriterionIds = new Set(frame.criteria.map((criterion) => criterion.id));
+        const linkedCriterionIds = operation.links.map((link) => link.criterionId);
+        if (new Set(linkedCriterionIds).size !== linkedCriterionIds.length) {
+          throw new DomainError("A card can link to each decision criterion only once.");
+        }
+        for (const link of operation.links) {
+          if (!activeCriterionIds.has(link.criterionId)) {
+            throw new DomainError(`Decision criterion '${link.criterionId}' is not active.`);
+          }
+        }
+        next.criterionLinks = [
+          ...next.criterionLinks.filter((link) => link.cardId !== operation.cardId),
+          ...operation.links.map((link) => ({
+            ...link,
+            cardId: operation.cardId,
+            createdBy: "human" as const,
+            updatedAt: now,
+          })),
+        ];
         break;
       }
       case "addAgentRequest": {

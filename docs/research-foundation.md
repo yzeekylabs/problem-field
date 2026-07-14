@@ -50,12 +50,37 @@ Product consequence: no fake confidence percentage. Pattern signal exposes recur
 
 ### 6. Decision-first continuous discovery — why the field exists
 
-Decision-first research begins with what will change because of the learning. Opportunity Solution Trees connect outcomes to opportunities, solutions, and assumption tests, while distinguishing generative interviews from evaluative testing.
+Decision-first research begins with what will change because of the learning. Sirjani's sequence is decision → evidence → research. Strategyzer's Test Card makes a hypothesis, test, measure, and success threshold explicit before the result is known. Product Talk similarly treats discovery as testing specific assumptions rather than validating a whole idea. Opportunity Solution Trees connect outcomes to opportunities, solutions, and assumption tests while distinguishing generative interviews from evaluative testing.
 
 - [Behzod Sirjani: decision-first user research](https://www.reforge.com/blog/your-user-research-questions-answered-a-recap-of-our-ama-with-behzod-sirjani)
+- [Reforge: decision-first product research](https://www.reforge.com/blog/product-research)
+- [Strategyzer Test Card](https://www.strategyzer.com/library/validate-your-ideas-with-the-test-card)
+- [Product Talk: assumption testing](https://www.producttalk.org/glossary-discovery-assumption-testing/)
 - [Teresa Torres: discovering solutions](https://www.producttalk.org/discovering-solutions/)
 
-Product consequence: every field has one active focus and ends by making the next inquiry explicit. This product deliberately stops before solution selection unless evidence justifies moving there.
+Product consequence: every field starts with a decision, a working hypothesis, and explicit continue/reconsider criteria. It ends by making the next inquiry explicit. The product deliberately stops before solution selection unless evidence justifies moving there.
+
+## Product language and ICP mental models
+
+The interface uses language already common across product discovery, user research, and product strategy. Framework names remain in the methodology and documentation; the product speaks in the objects people need to use.
+
+| Product language | Grounding | Why it appears in the interface |
+| --- | --- | --- |
+| **Decision** | Decision-first research | Names what the learning will change, avoiding research with no downstream choice. |
+| **Working hypothesis** | Test Card and assumption testing | Frames a falsifiable belief without asking the user to defend a conclusion. |
+| **Continue if / Reconsider if** | Test Card success threshold plus ACH disconfirmation | Makes both confirming and disconfirming conditions explicit before evidence is interpreted. |
+| **Source / Evidence / Observation / Pattern** | Atomic Research and GDS observation → finding → action | Preserves the chain from what happened to what someone inferred. |
+| **Current read** | Decision-support practice | Describes a reversible interpretation of the accepted evidence, not a machine decision. |
+| **Confidence basis** | Information power, meaning saturation, and research quality | Shows why the read is limited, developing, or considered without pretending qualitative material yields a probability. |
+| **Research context** | COREQ-style transparency and dialogue quality | Keeps transcript fidelity and the evidentiary character of a session visible without scoring a researcher or participant. |
+| **Review with agent** | HAX and PAIR human-AI guidance | Gives the user an explicit, correctable augmentation step rather than silent automation. |
+
+GDS analysis guidance separates observations from findings and actions and recommends retaining exact user evidence. Current research-repository language also centers evidence, themes, source traceability, and human validation rather than autonomous decisions.
+
+- [GDS: analyse a research session](https://www.gov.uk/service-manual/user-research/analyse-a-research-session)
+- [Dovetail research repository](https://dovetail.com/solutions/research-repository/)
+
+The deliberate vocabulary exclusions are equally important: no `AI score`, `verdict`, `validated`, `truth`, or unexplained percentage; no cutesy metaphor for a critical decision. `Field`, `forage`, and `frame` can shape the surrounding spatial experience, while the decision surface stays direct and professional.
 
 ## AI posture
 
@@ -71,6 +96,8 @@ Current work supports a hybrid workflow: LLMs can help code, group, retrieve quo
 
 The operating rule is: suggestions are attributable, evidence-linked, scoped, correctable, dismissible, and provisional. AI never silently becomes canonical understanding.
 
+HAX recommends making clear why the system acted and supporting efficient correction. PAIR warns that explanations can increase automation bias rather than automatically producing calibrated trust. The product therefore does not expose chain-of-thought or use model self-confidence as evidence. It exposes cited source material, deterministic derivation rules, material caveats, and the human action required to make any judgment canonical.
+
 ## 2026 market read
 
 Current products increasingly converge on source-linked themes, AI query, OCR/transcription, and spatial or repository synthesis:
@@ -82,4 +109,3 @@ Current products increasingly converge on source-linked themes, AI query, OCR/tr
 - [Verithos](https://verithos.co/) — finding → code → quote → source chains.
 
 The defensible wedge is therefore not “AI finds themes.” It is a clean, spatial, novice-guided practice for judging what deserves focus—while keeping evidence, uncertainty, and the next decision one move away.
-

@@ -10,10 +10,10 @@ import {
   type NodeChange,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import { FileUp, Plug } from "lucide-react";
+import { FileUp, Plug, Scale } from "lucide-react";
 
 import { ApiError, getWorkspace, importSourceFile, postOperations } from "./api.ts";
-import { FieldDock } from "./components/FieldDock.tsx";
+import { FieldDock, type DockView } from "./components/FieldDock.tsx";
 import { CanvasLayoutControl } from "./components/CanvasLayoutControl.tsx";
 import { ConnectorLibrary } from "./components/ConnectorLibrary.tsx";
 import { FieldCardNode, type FieldNode } from "./components/FieldCardNode.tsx";
@@ -30,7 +30,7 @@ import {
   type CanvasLayoutMode,
   type RoutedConnection,
 } from "./field-layout.ts";
-import { getPatternSignal } from "./sensemaking.ts";
+import { getDecisionReadout, getPatternSignal } from "./sensemaking.ts";
 import { inferSourceKind } from "./source-files.ts";
 import { getCardDisplayCopy, getProjectDisplayCopy } from "./presentation-copy.ts";
 import type {
@@ -40,6 +40,7 @@ import type {
   Source,
   Workspace,
 } from "./shared/workspace.ts";
+import { getActiveDecisionFrame } from "./shared/workspace.ts";
 
 const nodeTypes = { fieldCard: FieldCardNode };
 const edgeTypes = { spatial: SpatialEdge };
@@ -163,6 +164,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const [connectorLibraryOpen, setConnectorLibraryOpen] = useState(false);
+  const [dockView, setDockView] = useState<DockView>(null);
   const [droppedFile, setDroppedFile] = useState<File | undefined>();
   const [dragActive, setDragActive] = useState(false);
   const displayedNodesRef = useRef<FieldNode[]>([]);
@@ -258,11 +260,12 @@ export default function App() {
           type: "updateProject",
           patch: {
             name: input.name,
-            question: input.question,
+            question: input.decisionFrame.hypothesis,
             activeStage: "forage",
             onboardingComplete: true,
           },
         },
+        { type: "setDecisionFrame", frame: input.decisionFrame },
         ...(input.context
           ? [{
               type: "addSource" as const,
@@ -316,6 +319,12 @@ export default function App() {
   const selectedSignal = workspace && selectedCard?.kind === "pattern"
     ? getPatternSignal(workspace, selectedCard.id)
     : undefined;
+  const activeDecisionFrame = workspace ? getActiveDecisionFrame(workspace) : undefined;
+  const selectedCriterionLinks = workspace && selectedCard
+    ? (workspace.criterionLinks ?? [])
+      .filter((link) => link.cardId === selectedCard.id)
+      .map(({ criterionId, stance }) => ({ criterionId, stance }))
+    : [];
 
   useEffect(() => {
     displayedNodesRef.current = displayNodes;
@@ -463,9 +472,8 @@ export default function App() {
     );
   }
 
-  const evidenceCount = workspace.cards.filter((card) => card.kind === "evidence").length;
-  const patternCount = workspace.cards.filter((card) => card.kind === "pattern").length;
   const projectDisplay = getProjectDisplayCopy(workspace.project);
+  const decisionReadout = getDecisionReadout(workspace);
 
   return (
     <main
@@ -528,14 +536,20 @@ export default function App() {
               </div>
             </header>
 
-            {(workspace.sources.length > 0 || workspace.cards.length > 0) && (
-              <div className="field-summary" aria-label="Field composition">
-                <span><strong>{workspace.sources.length}</strong> sources</span>
-                <span><strong>{evidenceCount}</strong> evidence</span>
-                <span><strong>{patternCount}</strong> patterns</span>
-                <i className={busy ? "is-busy" : ""} title={busy ? "Saving" : `Saved locally · revision ${workspace.revision}`} />
-              </div>
-            )}
+            <button
+              aria-label={`Open current read: ${decisionReadout.label}, confidence ${decisionReadout.basisLabel}`}
+              className="field-summary"
+              onClick={() => setDockView("loop")}
+              type="button"
+            >
+              <Scale aria-hidden="true" className="field-summary__icon" size={14} />
+              <span className="field-summary__copy">
+                <small>Current read</small>
+                <strong>{decisionReadout.label}</strong>
+                <em>Confidence · {decisionReadout.basisLabel}</em>
+              </span>
+              <i className={busy ? "is-busy" : ""} title={busy ? "Saving" : `Saved locally · revision ${workspace.revision}`} />
+            </button>
 
             {workspace.cards.length > 1 && (
               <CanvasLayoutControl mode={layoutMode} onChange={changeLayoutMode} />
@@ -554,10 +568,24 @@ export default function App() {
               onSetStage={(stage: FieldStage) => void mutate([
                 { type: "updateProject", patch: { activeStage: stage } },
               ])}
+              onSetDecisionFrame={async (frame) => {
+                await mutate(
+                  [{ type: "setDecisionFrame", frame }],
+                  activeDecisionFrame ? "Evidence bar updated" : "Evidence bar agreed",
+                );
+              }}
+              onSetSourceResearchQuality={async (sourceId, assessment) => {
+                await mutate(
+                  [{ type: "setSourceResearchQuality", sourceId, assessment }],
+                  assessment ? "Research context saved" : "Research context cleared",
+                );
+              }}
               onUpdateQuestion={(question) => void mutate([
                 { type: "updateProject", patch: { question } },
               ], "Focus updated")}
+              onViewChange={setDockView}
               selectedTitle={selectedCard ? getCardDisplayCopy(selectedCard).title : undefined}
+              view={dockView}
               workspace={workspace}
             />
           </>
@@ -599,13 +627,18 @@ export default function App() {
           <Inspector
             busy={busy}
             card={selectedCard}
+            activeDecisionFrame={activeDecisionFrame}
+            criterionLinks={selectedCriterionLinks}
             onClose={() => setSelectedCardId(null)}
             onDelete={(cardId) => {
               setSelectedCardId(null);
               void mutate([{ type: "deleteCard", cardId }], "Card removed");
             }}
-            onSave={(cardId, title, body, sourceRef) => void mutate(
-              [{ type: "updateCard", cardId, patch: { title, body, ...(sourceRef !== undefined ? { sourceRef } : {}) } }],
+            onSave={(cardId, title, body, sourceRef, criterionLinks = []) => void mutate(
+              [
+                { type: "updateCard", cardId, patch: { title, body, ...(sourceRef !== undefined ? { sourceRef } : {}) } },
+                ...(activeDecisionFrame ? [{ type: "setCriterionLinksForCard" as const, cardId, links: criterionLinks }] : []),
+              ],
               "Card updated",
             )}
             signal={selectedSignal}

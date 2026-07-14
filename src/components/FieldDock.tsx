@@ -24,21 +24,33 @@ import {
 } from "lucide-react";
 
 import { getAgentRunActivity } from "../api.ts";
-import { fieldStages, getNextMove } from "../sensemaking.ts";
+import { fieldStages, getDecisionReadout, getNextMove } from "../sensemaking.ts";
 import { getCardDisplayCopy, getCompactLabel } from "../presentation-copy.ts";
 import type { AgentRunActivity } from "../shared/agent-activity.ts";
-import type { CardKind, FieldStage, Workspace } from "../shared/workspace.ts";
+import type {
+  CardKind,
+  DecisionFrameInput,
+  FieldStage,
+  SourceResearchQualityInput,
+  Workspace,
+} from "../shared/workspace.ts";
+import { DecisionFramePanel } from "./DecisionFramePanel.tsx";
+import { SourceQualityEditor } from "./SourceQualityEditor.tsx";
 
-type DockView = "loop" | "add" | "sources" | "proposals" | null;
+export type DockView = "loop" | "add" | "sources" | "proposals" | null;
 
 type FieldDockProps = {
   workspace: Workspace;
   busy: boolean;
+  view: DockView;
   selectedTitle?: string;
   onAddCard: (kind: CardKind) => void;
   onAddSource: () => void;
   onOpenConnectors: () => void;
   onAsk: (prompt: string) => Promise<void>;
+  onViewChange: (view: DockView) => void;
+  onSetDecisionFrame: (frame: DecisionFrameInput) => Promise<void>;
+  onSetSourceResearchQuality: (sourceId: string, assessment: SourceResearchQualityInput | null) => Promise<void>;
   onSetStage: (stage: FieldStage) => void;
   onUpdateQuestion: (question: string) => void;
   onReviewProposal: (proposalId: string, decision: "accepted" | "dismissed") => void;
@@ -88,23 +100,27 @@ function friendlyRunError(error?: string) {
 export function FieldDock({
   workspace,
   busy,
+  view,
   selectedTitle,
   onAddCard,
   onAddSource,
   onOpenConnectors,
   onAsk,
+  onViewChange,
+  onSetDecisionFrame,
+  onSetSourceResearchQuality,
   onSetStage,
   onUpdateQuestion,
   onReviewProposal,
   onCopyRequestCommand,
 }: FieldDockProps) {
-  const [view, setView] = useState<DockView>(null);
   const [prompt, setPrompt] = useState("");
   const [question, setQuestion] = useState(workspace.project.question);
   const [selectedSourceId, setSelectedSourceId] = useState(workspace.sources[0]?.id ?? "");
   const [runActivities, setRunActivities] = useState<Record<string, AgentRunActivity>>({});
   const [clock, setClock] = useState(() => Date.now());
   const nextMove = useMemo(() => getNextMove(workspace), [workspace]);
+  const decisionReadout = useMemo(() => getDecisionReadout(workspace), [workspace]);
   const activeStage = fieldStages.find((stage) => stage.id === workspace.project.activeStage)!;
   const pendingProposals = workspace.agentProposals.filter((proposal) => proposal.status === "pending");
   const activeRequests = workspace.agentRequests.filter((request) => request.status === "queued" || request.status === "running");
@@ -161,15 +177,26 @@ export function FieldDock({
     if (next === "sources" && !selectedSourceId && workspace.sources[0]) {
       setSelectedSourceId(workspace.sources[0].id);
     }
-    setView((current) => (current === next ? null : next));
+    onViewChange(view === next ? null : next);
   }
 
   function runNextMove() {
     if (nextMove.action === "add-source") onAddSource();
     if (nextMove.action === "add-evidence") onAddCard("evidence");
     if (nextMove.action === "ask-agent" && nextMove.prompt) void submit(nextMove.prompt);
-    if (nextMove.action === "review-proposals") setView("proposals");
+    if (nextMove.action === "review-proposals") onViewChange("proposals");
     if (nextMove.action === "change-stage") onSetStage(nextMove.stage);
+    if (nextMove.action === "edit-frame") onViewChange("loop");
+  }
+
+  async function reviewDecisionFrame() {
+    await onAsk("Review the active decision frame as decision-support, not as a verdict. Check whether the working hypothesis is specific and testable; whether each continue and reconsider criterion is observable, discriminating, and connected to the decision; and whether a plausible competing explanation or disconfirming condition is missing. Cite current card and source IDs where relevant. Do not edit the frame, set evidence links or source quality, or make the decision.");
+    onViewChange("proposals");
+  }
+
+  async function reviewSourceQuality(sourceId: string, sourceTitle: string) {
+    await onAsk(`Review source '${sourceTitle}' (${sourceId}) as decision-support material. Separate transcript fidelity, session evidence, and relevance to the active decision. Cite exact locators or exchanges. Flag leading, compound, abstract, or hypothetical prompts; speaker uncertainty; participant-fit gaps; and concrete recent behavior, consequences, or workarounds. Do not score the interviewer, set research quality, create criterion links, or make the decision.`);
+    onViewChange("proposals");
   }
 
   return (
@@ -189,45 +216,55 @@ export function FieldDock({
       {view && (
         <section className={`dock-sheet dock-sheet--${view}`} aria-label={`${view} panel`}>
           <header className="dock-sheet__header">
-            <span>{view === "loop" ? "The field loop" : view === "add" ? "Add to the field" : view === "sources" ? "Source library" : "Agent review"}</span>
-            <button aria-label="Close panel" className="icon-button" onClick={() => setView(null)} type="button">
+            <span>{view === "loop" ? "Decision and field loop" : view === "add" ? "Add to the field" : view === "sources" ? "Source library" : "Agent review"}</span>
+            <button aria-label="Close panel" className="icon-button" onClick={() => onViewChange(null)} type="button">
               <X aria-hidden="true" size={16} />
             </button>
           </header>
 
           {view === "loop" && (
             <div className="loop-panel">
-              <div className="stage-rail" role="list" aria-label="Sensemaking stages">
-                {fieldStages.map((stage, index) => (
+              <DecisionFramePanel
+                busy={busy}
+                key={workspace.decisionFrames?.at(-1)?.id ?? "unframed"}
+                onReviewWithAgent={reviewDecisionFrame}
+                onSave={onSetDecisionFrame}
+                readout={decisionReadout}
+                workspace={workspace}
+              />
+              <div className="loop-practice">
+                <div className="stage-rail" role="list" aria-label="Sensemaking stages">
+                  {fieldStages.map((stage, index) => (
+                    <button
+                      aria-current={stage.id === workspace.project.activeStage ? "step" : undefined}
+                      className={stage.id === workspace.project.activeStage ? "is-active" : ""}
+                      key={stage.id}
+                      onClick={() => onSetStage(stage.id)}
+                      type="button"
+                    >
+                      <span>{index + 1}</span>
+                      <strong>{stage.label}</strong>
+                      <small>{stage.verb}</small>
+                    </button>
+                  ))}
+                </div>
+                <div className="focus-editor">
+                  <div>
+                    <span>Active focus</span>
+                    <p>{activeStage.description} The loop is recursive; move whenever the evidence asks you to.</p>
+                  </div>
+                  <label>
+                    <span className="sr-only">Active problem question</span>
+                    <textarea rows={2} value={question} onChange={(event) => setQuestion(event.target.value)} />
+                  </label>
                   <button
-                    aria-current={stage.id === workspace.project.activeStage ? "step" : undefined}
-                    className={stage.id === workspace.project.activeStage ? "is-active" : ""}
-                    key={stage.id}
-                    onClick={() => onSetStage(stage.id)}
+                    disabled={busy || !question.trim() || question.trim() === workspace.project.question}
+                    onClick={() => onUpdateQuestion(question.trim())}
                     type="button"
                   >
-                    <span>{index + 1}</span>
-                    <strong>{stage.label}</strong>
-                    <small>{stage.verb}</small>
+                    <Save aria-hidden="true" size={14} /> Save focus
                   </button>
-                ))}
-              </div>
-              <div className="focus-editor">
-                <div>
-                  <span>Active focus</span>
-                  <p>{activeStage.description} The loop is recursive; move whenever the evidence asks you to.</p>
                 </div>
-                <label>
-                  <span className="sr-only">Active problem question</span>
-                  <textarea rows={2} value={question} onChange={(event) => setQuestion(event.target.value)} />
-                </label>
-                <button
-                  disabled={busy || !question.trim() || question.trim() === workspace.project.question}
-                  onClick={() => onUpdateQuestion(question.trim())}
-                  type="button"
-                >
-                  <Save aria-hidden="true" size={14} /> Save focus
-                </button>
               </div>
             </div>
           )}
@@ -276,6 +313,13 @@ export function FieldDock({
                 {selectedSource ? (
                   <>
                     <header><span>{selectedSource.kind}</span><strong>{selectedSource.title}</strong><small>{selectedSource.origin ?? selectedSource.asset?.originalName ?? (selectedSource.externalRef ? `${selectedSource.externalRef.connectorId} · retrieved ${new Date(selectedSource.externalRef.retrievedAt).toLocaleDateString()}` : "Local source")}</small></header>
+                    <SourceQualityEditor
+                      busy={busy}
+                      key={`${selectedSource.id}:${selectedSource.researchQuality?.updatedAt ?? "new"}`}
+                      onReviewWithAgent={() => reviewSourceQuality(selectedSource.id, selectedSource.title)}
+                      onSave={(assessment) => onSetSourceResearchQuality(selectedSource.id, assessment)}
+                      source={selectedSource}
+                    />
                     {selectedSource.kind === "image" && selectedSource.asset && (
                       <img alt={selectedSource.title} src={`/api/assets/${encodeURIComponent(selectedSource.asset.fileName)}`} />
                     )}

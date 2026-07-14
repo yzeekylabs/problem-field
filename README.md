@@ -7,12 +7,14 @@ This is an early working slice, built to answer one question: **does it feel mat
 ## What works now
 
 - Work through an opinionated but recursive Field Loop: Orient, Forage, Cluster, Frame, Test, Decide.
-- Open on a blank field and bootstrap it with one focus, optional context, and starting files.
+- Open on a blank field and agree the decision, working hypothesis, continue/reconsider evidence bar, optional context, and starting files.
 - Arrange typed cards on an infinite canvas and connect them.
 - Drag in text, image, PDF, audio, or video files locally.
 - Keep evidence visibly distinct from observations, patterns, and questions.
 - Preserve source provenance on evidence cards.
 - See pattern signal as evidence/source/contradiction composition rather than a fake score.
+- Read `too early`, `mixed`, `leaning continue`, or `leaning reconsider` from human-accepted, source-linked evidence—never model confidence.
+- Keep transcript fidelity and interview evidence context attached to the source, with agent critique remaining cited and provisional.
 - Ask a question from the canvas and follow safe, live execution milestones while the local runner works through Codex.
 - Let Codex or Claude Code propose patterns and questions for explicit human review.
 - Reuse the selected Codex or Claude Code host's MCP configuration and connect low-friction sources without storing a second auth registry.
