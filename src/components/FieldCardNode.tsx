@@ -28,7 +28,14 @@ export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
       className={`field-card field-card--${card.kind}${selected ? " is-selected" : ""}`}
       data-created-by={card.createdBy}
     >
-      <Handle className="field-handle" type="target" position={Position.Left} />
+      <Handle className="field-handle field-handle--target" id="top" type="target" position={Position.Top} />
+      <Handle className="field-handle field-handle--target" id="right" type="target" position={Position.Right} />
+      <Handle className="field-handle field-handle--target" id="bottom" type="target" position={Position.Bottom} />
+      <Handle className="field-handle field-handle--target" id="left" type="target" position={Position.Left} />
+      <Handle className="field-handle" id="top" type="source" position={Position.Top} />
+      <Handle className="field-handle" id="right" type="source" position={Position.Right} />
+      <Handle className="field-handle" id="bottom" type="source" position={Position.Bottom} />
+      <Handle className="field-handle" id="left" type="source" position={Position.Left} />
       <header className="field-card__meta">
         <span className="field-card__kind">
           <Icon aria-hidden="true" size={13} strokeWidth={1.8} />
@@ -55,7 +62,6 @@ export function FieldCardNode({ data, selected }: NodeProps<FieldNode>) {
           {signal.evidenceCount} evidence · {signal.sourceCount} {signal.sourceCount === 1 ? "source" : "sources"} · {signal.contradictionCount} contrary
         </footer>
       )}
-      <Handle className="field-handle" type="source" position={Position.Right} />
     </article>
   );
 }

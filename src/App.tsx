@@ -9,17 +9,24 @@ import {
   type Connection,
   type Edge,
   type NodeChange,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { FileUp, Plug } from "lucide-react";
 
 import { ApiError, getWorkspace, importSourceFile, postOperations } from "./api.ts";
 import { FieldDock } from "./components/FieldDock.tsx";
+import { CanvasLayoutControl } from "./components/CanvasLayoutControl.tsx";
 import { ConnectorLibrary } from "./components/ConnectorLibrary.tsx";
 import { FieldCardNode, type FieldNode } from "./components/FieldCardNode.tsx";
 import { FieldLogo } from "./components/FieldLogo.tsx";
 import { FirstRun, type BootstrapInput } from "./components/FirstRun.tsx";
 import { Inspector } from "./components/Inspector.tsx";
 import { SourceModal } from "./components/SourceModal.tsx";
+import {
+  getConnectionHandles,
+  getGroupedNodes,
+  type CanvasLayoutMode,
+} from "./field-layout.ts";
 import { getPatternSignal } from "./sensemaking.ts";
 import { inferSourceKind } from "./source-files.ts";
 import type {
@@ -31,6 +38,7 @@ import type {
 } from "./shared/workspace.ts";
 
 const nodeTypes = { fieldCard: FieldCardNode };
+const canvasFitPadding = { top: "60px", right: "6%", bottom: "190px", left: "6%" } as const;
 
 function workspaceToNodes(workspace: Workspace): FieldNode[] {
   return workspace.cards.map((card) => ({
@@ -45,16 +53,35 @@ function workspaceToNodes(workspace: Workspace): FieldNode[] {
   }));
 }
 
-function workspaceToEdges(workspace: Workspace): Edge[] {
-  return workspace.connections.map((connection) => ({
-    id: connection.id,
-    source: connection.from,
-    target: connection.to,
-    label: connection.label,
-    type: "smoothstep",
-    markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
-    className: `field-edge field-edge--${connection.kind}`,
-  }));
+function workspaceToEdges(
+  workspace: Workspace,
+  nodes: FieldNode[],
+  selectedCardId: string | null,
+): Edge[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+
+  return workspace.connections.map((connection) => {
+    const source = nodeById.get(connection.from);
+    const target = nodeById.get(connection.to);
+    const handles = source && target ? getConnectionHandles(source, target) : undefined;
+    const isRelated = selectedCardId === connection.from || selectedCardId === connection.to;
+    const emphasis = selectedCardId ? (isRelated ? " is-related" : " is-muted") : "";
+
+    return {
+      id: connection.id,
+      source: connection.from,
+      target: connection.to,
+      sourceHandle: handles?.sourceHandle,
+      targetHandle: handles?.targetHandle,
+      label: connection.label,
+      type: "smoothstep",
+      pathOptions: { offset: 26, borderRadius: 14 },
+      interactionWidth: 18,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11 },
+      className: `field-edge field-edge--${connection.kind}${emphasis}`,
+      zIndex: isRelated ? 2 : 0,
+    };
+  });
 }
 
 function starterCopy(kind: CardKind) {
@@ -73,6 +100,8 @@ function starterCopy(kind: CardKind) {
 export default function App() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [nodes, setNodes] = useState<FieldNode[]>([]);
+  const [layoutMode, setLayoutMode] = useState<CanvasLayoutMode>("custom");
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<FieldNode> | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,15 +245,41 @@ export default function App() {
     }
   }, [busy, load, workspace]);
 
-  const edges = useMemo(() => (workspace ? workspaceToEdges(workspace) : []), [workspace]);
+  const displayNodes = useMemo(
+    () => layoutMode === "grouped" && workspace ? getGroupedNodes(nodes, workspace.connections) : nodes,
+    [layoutMode, nodes, workspace],
+  );
+  const edges = useMemo(
+    () => workspace ? workspaceToEdges(workspace, displayNodes, selectedCardId) : [],
+    [displayNodes, selectedCardId, workspace],
+  );
+  const graphShapeKey = useMemo(
+    () => workspace
+      ? `${workspace.cards.map((card) => card.id).join(",")}|${workspace.connections.map((connection) => connection.id).join(",")}`
+      : "",
+    [workspace],
+  );
   const selectedCard = workspace?.cards.find((card) => card.id === selectedCardId) ?? null;
   const selectedSignal = workspace && selectedCard?.kind === "pattern"
     ? getPatternSignal(workspace, selectedCard.id)
     : undefined;
 
+  useEffect(() => {
+    if (!flowInstance || !workspace?.project.onboardingComplete || displayNodes.length === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      void flowInstance.fitView({ padding: canvasFitPadding, maxZoom: 0.95, duration: 420 });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [displayNodes.length, flowInstance, graphShapeKey, layoutMode, workspace?.project.onboardingComplete]);
+
   const onNodesChange = useCallback((changes: NodeChange<FieldNode>[]) => {
-    setNodes((current) => applyNodeChanges(changes, current));
-  }, []);
+    const canonicalChanges = layoutMode === "custom"
+      ? changes
+      : changes.filter((change) => change.type !== "position");
+    if (canonicalChanges.length > 0) {
+      setNodes((current) => applyNodeChanges(canonicalChanges, current));
+    }
+  }, [layoutMode]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return;
@@ -318,22 +373,28 @@ export default function App() {
         if (file) openSourceModal(file);
       }}
     >
-      <section className="canvas-shell" aria-label="Problem field canvas">
+      <section className="canvas-shell" data-layout-mode={layoutMode} aria-label="Problem field canvas">
         <ReactFlow
           colorMode="light"
           deleteKeyCode={null}
           edges={edges}
           fitView
-          fitViewOptions={{ padding: 0.22, maxZoom: 0.95 }}
+          fitViewOptions={{ padding: canvasFitPadding, maxZoom: 0.95 }}
           maxZoom={1.6}
           minZoom={0.2}
           nodeTypes={nodeTypes}
-          nodes={nodes}
+          nodes={displayNodes}
+          nodesDraggable={layoutMode === "custom"}
           onConnect={onConnect}
+          onInit={setFlowInstance}
           onNodeClick={(_, node) => setSelectedCardId(node.id)}
-          onNodeDragStop={(_, node) => void mutate([
-            { type: "moveCards", positions: [{ cardId: node.id, position: node.position }] },
-          ])}
+          onNodeDragStop={(_, node) => {
+            if (layoutMode === "custom") {
+              void mutate([
+                { type: "moveCards", positions: [{ cardId: node.id, position: node.position }] },
+              ]);
+            }
+          }}
           onNodesChange={onNodesChange}
           onPaneClick={() => setSelectedCardId(null)}
           proOptions={{ hideAttribution: true }}
@@ -356,6 +417,10 @@ export default function App() {
                 <span><strong>{patternCount}</strong> patterns</span>
                 <i className={busy ? "is-busy" : ""} title={busy ? "Saving" : `Saved locally · revision ${workspace.revision}`} />
               </div>
+            )}
+
+            {workspace.cards.length > 1 && (
+              <CanvasLayoutControl mode={layoutMode} onChange={setLayoutMode} />
             )}
 
             <FieldDock

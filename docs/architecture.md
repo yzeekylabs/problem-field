@@ -34,11 +34,14 @@ extracted text/version    pattern / question               (explicit accept or d
 
 This is the core split-brain defense: AI conversation state, visual layout state, and source extraction state never become competing stores of meaning.
 
+Canvas arrangement follows the same rule. Card coordinates in the workspace are the user's canonical **Custom** layout. **Grouped** is a browser-only projection derived from current cards and relationships: it lays out connected islands, routes edges to the nearest card sides, and never writes positions or increments the workspace revision. Returning to Custom therefore restores the exact saved coordinates rather than reconstructing them from another client-side store.
+
 Execution activity is a fourth, explicitly non-canonical lane. The runner writes sanitized lifecycle and tool-category milestones under `data/local/agent-runs/`, keyed by the canonical request's `runId`. The browser reads that lane for live feedback, but it cannot turn activity into evidence or mutate the workspace through it. Keeping these frequent updates out of `workspace.json` also prevents progress reporting from racing the agent's own revision-checked field operations.
 
 ## Invariants
 
 - The browser does not persist an independent canvas snapshot.
+- Presentation-only canvas arrangements cannot write canonical card positions.
 - Agents do not edit workspace JSON directly.
 - Writes fail closed when `baseRevision` is stale.
 - Connections and proposal scopes cannot reference missing cards.
