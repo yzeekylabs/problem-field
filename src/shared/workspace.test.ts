@@ -424,6 +424,38 @@ describe("applyOperationSet", () => {
     expect(framed.decisionFrames[0]).toMatchObject({ version: 1, createdBy: "human" });
   });
 
+  it("accepts a ten-criterion bulk evidence bar without truncating text", () => {
+    const criteria = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `continue-${index + 1}`,
+        polarity: "continue" as const,
+        statement: `Continue condition ${index + 1} remains exactly as written.`,
+      })),
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `reconsider-${index + 1}`,
+        polarity: "reconsider" as const,
+        statement: `Reconsider condition ${index + 1} remains exactly as written.`,
+      })),
+    ];
+
+    const framed = applyOperationSet(workspace(), {
+      baseRevision: 2,
+      actor: "human",
+      operations: [{
+        type: "setDecisionFrame",
+        frame: {
+          id: "frame-ten-criteria",
+          decision: "Should we continue?",
+          hypothesis: "The problem is worth deeper research.",
+          criteria,
+        },
+      }],
+    }, now);
+
+    expect(framed.decisionFrames[0].criteria).toEqual(criteria);
+    expect(framed.decisionFrames[0].criteria).toHaveLength(10);
+  });
+
   it("preserves links only when a versioned criterion is unchanged", () => {
     const framed = applyOperationSet(workspace(), {
       baseRevision: 2,

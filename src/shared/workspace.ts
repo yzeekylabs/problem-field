@@ -37,7 +37,7 @@ export const fieldStageSchema = z.enum([
 export type FieldStage = z.infer<typeof fieldStageSchema>;
 
 export const decisionCriterionMaxLength = 500;
-export const decisionCriteriaMaxTotal = 8;
+export const decisionCriteriaMaxTotal = 16;
 
 export const decisionCriterionSchema = z.object({
   id: idSchema,
