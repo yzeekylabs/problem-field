@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUp,
   Bot,
@@ -23,7 +23,9 @@ import {
   X,
 } from "lucide-react";
 
+import { getAgentRunActivity } from "../api.ts";
 import { fieldStages, getNextMove } from "../sensemaking.ts";
+import type { AgentRunActivity } from "../shared/agent-activity.ts";
 import type { CardKind, FieldStage, Workspace } from "../shared/workspace.ts";
 
 type DockView = "loop" | "add" | "sources" | "proposals" | null;
@@ -54,6 +56,34 @@ const addOptions: Array<{
   { kind: "question", label: "Question", description: "A gap, alternative, or uncertainty", icon: HelpCircle },
 ];
 
+function elapsedLabel(milliseconds: number) {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function providerLabel(provider?: "codex" | "claude") {
+  if (provider === "codex") return "Codex";
+  if (provider === "claude") return "Claude Code";
+  return "Agent";
+}
+
+function friendlyRunError(error?: string) {
+  if (!error) return undefined;
+  if (error === "The codex run exceeded 8 minutes.") {
+    return "This earlier run reached the old eight-minute limit. Continue safely to resume from the current field with the new 15-minute runner.";
+  }
+  if (error === "The local API stopped before this run completed. Queue the request again to retry.") {
+    return "This earlier run was interrupted by a local app restart. Continue safely to resume from the current field without duplicating completed work.";
+  }
+  return error;
+}
+
 export function FieldDock({
   workspace,
   busy,
@@ -71,13 +101,52 @@ export function FieldDock({
   const [prompt, setPrompt] = useState("");
   const [question, setQuestion] = useState(workspace.project.question);
   const [selectedSourceId, setSelectedSourceId] = useState(workspace.sources[0]?.id ?? "");
+  const [runActivities, setRunActivities] = useState<Record<string, AgentRunActivity>>({});
+  const [clock, setClock] = useState(() => Date.now());
   const nextMove = useMemo(() => getNextMove(workspace), [workspace]);
   const activeStage = fieldStages.find((stage) => stage.id === workspace.project.activeStage)!;
   const pendingProposals = workspace.agentProposals.filter((proposal) => proposal.status === "pending");
   const activeRequests = workspace.agentRequests.filter((request) => request.status === "queued" || request.status === "running");
   const recentRequests = [...workspace.agentRequests].reverse().slice(0, 4);
+  const trackedRunKey = recentRequests.flatMap((request) => request.runId ? [request.runId] : []).join(",");
+  const runningRunKey = activeRequests.flatMap((request) => request.runId ? [request.runId] : []).join(",");
   const effectiveSourceId = selectedSourceId || workspace.sources[0]?.id;
   const selectedSource = workspace.sources.find((source) => source.id === effectiveSourceId);
+
+  useEffect(() => {
+    const runIds = trackedRunKey ? trackedRunKey.split(",") : [];
+    if (runIds.length === 0) return;
+    let current = true;
+    const refresh = async () => {
+      const results = await Promise.all(runIds.map(async (runId) => {
+        try {
+          return [runId, await getAgentRunActivity(runId)] as const;
+        } catch {
+          return [runId, null] as const;
+        }
+      }));
+      if (!current) return;
+      setRunActivities((existing) => {
+        const next = { ...existing };
+        for (const [runId, activity] of results) {
+          if (activity) next[runId] = activity;
+        }
+        return next;
+      });
+    };
+    void refresh();
+    const interval = runningRunKey ? window.setInterval(() => void refresh(), 1_500) : undefined;
+    return () => {
+      current = false;
+      if (interval) window.clearInterval(interval);
+    };
+  }, [runningRunKey, trackedRunKey]);
+
+  useEffect(() => {
+    if (!runningRunKey) return;
+    const interval = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, [runningRunKey]);
 
   async function submit(value = prompt) {
     const cleanPrompt = value.trim();
@@ -244,20 +313,64 @@ export function FieldDock({
                 <div className="request-queue">
                   <span>Agent activity</span>
                   {recentRequests.map((request) => (
-                    <article className={`agent-run agent-run--${request.status}`} key={request.id}>
-                      <div className="agent-run__status">
-                        {request.status === "running" ? <LoaderCircle aria-hidden="true" className="connector-spinner" size={14} /> : request.status === "completed" ? <CheckCircle2 aria-hidden="true" size={14} /> : request.status === "failed" ? <AlertCircle aria-hidden="true" size={14} /> : <Bot aria-hidden="true" size={14} />}
-                        <strong>{request.status === "running" ? `${request.provider ?? "Agent"} is working` : request.status === "completed" ? "Completed" : request.status === "failed" ? "Needs attention" : "Queued"}</strong>
-                      </div>
-                      <p>{request.prompt}</p>
-                      {(request.response || request.error) && <small>{request.response ?? request.error}</small>}
-                      {request.status === "failed" && (
-                        <div className="agent-run__actions">
-                          <button disabled={busy} onClick={() => void submit(request.prompt)} type="button">Retry</button>
-                          <button onClick={() => onCopyRequestCommand(request.id)} type="button">Copy manual fallback</button>
-                        </div>
-                      )}
-                    </article>
+                    (() => {
+                      const activity = request.runId ? runActivities[request.runId] : undefined;
+                      const visibleEvents = activity
+                        ? [...activity.events].sort((left, right) => left.at.localeCompare(right.at)).slice(-5)
+                        : [];
+                      const runElapsed = activity ? elapsedLabel(clock - Date.parse(activity.startedAt)) : undefined;
+                      const updateElapsed = activity ? elapsedLabel(clock - Date.parse(activity.updatedAt)) : undefined;
+                      const runError = friendlyRunError(request.error);
+                      const result = request.response ?? runError;
+                      const resultAlreadyVisible = Boolean(result && activity?.events.some((event) => event.detail === result));
+                      return (
+                        <article className={`agent-run agent-run--${request.status}`} key={request.id}>
+                          <div className="agent-run__heading">
+                            <div className="agent-run__status" aria-live="polite">
+                              {request.status === "running" ? <LoaderCircle aria-hidden="true" className="connector-spinner" size={14} /> : request.status === "completed" ? <CheckCircle2 aria-hidden="true" size={14} /> : request.status === "failed" ? <AlertCircle aria-hidden="true" size={14} /> : <Bot aria-hidden="true" size={14} />}
+                              <strong>{request.status === "running" ? `${providerLabel(request.provider)} is working` : request.status === "completed" ? "Completed" : request.status === "failed" ? "Needs attention" : "Queued"}</strong>
+                            </div>
+                            {activity && (
+                              <small className="agent-run__timing">
+                                {request.status === "running" ? `${runElapsed} elapsed · ${updateElapsed === "just now" ? "just updated" : `last milestone ${updateElapsed} ago`}` : `${runElapsed} total`}
+                              </small>
+                            )}
+                          </div>
+
+                          {visibleEvents.length > 0 ? (
+                            <ol className="agent-run__timeline" aria-label="Agent run milestones">
+                              {visibleEvents.map((event) => (
+                                <li className={`agent-run__event agent-run__event--${event.state}`} key={event.id}>
+                                  <span className="agent-run__event-icon">
+                                    {event.state === "active" ? <LoaderCircle aria-hidden="true" className="connector-spinner" size={12} /> : event.state === "failed" ? <AlertCircle aria-hidden="true" size={12} /> : <Check aria-hidden="true" size={12} />}
+                                  </span>
+                                  <span>
+                                    <strong>{event.label}</strong>
+                                    {event.detail && <small>{event.detail}</small>}
+                                  </span>
+                                </li>
+                              ))}
+                            </ol>
+                          ) : request.status === "running" ? (
+                            <div className="agent-run__waiting">
+                              <LoaderCircle aria-hidden="true" className="connector-spinner" size={12} />
+                              <span>Waiting for the first runner milestone…</span>
+                            </div>
+                          ) : null}
+
+                          <p className="agent-run__task"><span>Task</span>{request.prompt}</p>
+                          {result && !resultAlreadyVisible && <small className="agent-run__result">{result}</small>}
+                          {request.status === "failed" && (
+                            <div className="agent-run__actions">
+                              <button disabled={busy} onClick={() => void submit(request.prompt)} type="button">
+                                {runError?.includes("current field") ? "Continue safely" : "Retry"}
+                              </button>
+                              <button onClick={() => onCopyRequestCommand(request.id)} type="button">Copy manual fallback</button>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })()
                   ))}
                 </div>
               )}

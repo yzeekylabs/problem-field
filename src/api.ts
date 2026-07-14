@@ -1,5 +1,6 @@
 import type { OperationSet, Workspace } from "./shared/workspace.ts";
 import type { ConnectorDefinition } from "./shared/connectors.ts";
+import type { AgentRunActivity } from "./shared/agent-activity.ts";
 
 type ApiErrorBody = {
   error?: string;
@@ -22,6 +23,13 @@ export async function getWorkspace(): Promise<Workspace> {
   const response = await fetch("/api/workspace", { cache: "no-store" });
   if (!response.ok) throw new ApiError("Could not load the field.", response.status, {});
   return response.json() as Promise<Workspace>;
+}
+
+export async function getAgentRunActivity(runId: string): Promise<AgentRunActivity | null> {
+  const response = await fetch(`/api/agent-runs/${encodeURIComponent(runId)}/activity`, { cache: "no-store" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new ApiError("Could not read agent activity.", response.status, {});
+  return response.json() as Promise<AgentRunActivity>;
 }
 
 export async function postOperations(input: OperationSet): Promise<Workspace> {

@@ -34,6 +34,8 @@ extracted text/version    pattern / question               (explicit accept or d
 
 This is the core split-brain defense: AI conversation state, visual layout state, and source extraction state never become competing stores of meaning.
 
+Execution activity is a fourth, explicitly non-canonical lane. The runner writes sanitized lifecycle and tool-category milestones under `data/local/agent-runs/`, keyed by the canonical request's `runId`. The browser reads that lane for live feedback, but it cannot turn activity into evidence or mutate the workspace through it. Keeping these frequent updates out of `workspace.json` also prevents progress reporting from racing the agent's own revision-checked field operations.
+
 ## Invariants
 
 - The browser does not persist an independent canvas snapshot.
@@ -45,6 +47,7 @@ This is the core split-brain defense: AI conversation state, visual layout state
 - Raw source files are local and gitignored by default.
 - Provider identity appears only as request execution metadata, never as a second field model.
 - Only a queued request can be claimed, and only its matching run ID can finish it.
+- Runner activity never increments the workspace revision or exposes raw commands, tool inputs/results, or private reasoning.
 
 ## Multimodal ingestion
 
@@ -54,7 +57,9 @@ The extraction record (`queued`, `ready`, or `failed`) belongs to the source. La
 
 ## Agent and connector boundary
 
-The API owns one local worker and one active agent host. It claims queued work through the same revision-checked operation pipeline, launches the provider without a shell, uses workspace-write sandboxing, and records completion or failure durably. Codex is the default; Claude Code can be selected with `FIELD_AGENT_PROVIDER=claude`. Both consume the same repository instructions and CLI protocol.
+The API owns one local worker and one active agent host. It claims queued work through the same revision-checked operation pipeline, launches the provider without a shell, uses workspace-write sandboxing, and records completion or failure durably. Codex is the default, with an explicit GPT-5.6 Terra / medium-effort execution profile and a 15-minute safety limit. Claude Code can be selected with `FIELD_AGENT_PROVIDER=claude`. Both consume the same repository instructions and CLI protocol, and every default remains environment-overridable.
+
+Provider JSON streams are reduced to a small safe vocabulary: started, planning, reading the field, inspecting sources, checking a connector, applying grounded changes, checking work, and finished. Reasoning events are dropped, commands are classified without exposing their text, and MCP arguments and results never cross the activity API. If the local API restarts, a running request fails closed instead of being replayed automatically; automatic replay could leave two provider processes writing against the same field.
 
 Connector configuration belongs to the active agent host, not the field. For Codex, the library derives configured and authenticated state from `codex mcp list --json`; for Claude Code it inspects the same named servers through `claude mcp get`. Connection actions use the selected provider's user-level MCP commands. The app does not merge Codex and Claude connector registries because that would create ambiguous authorization and capability truth. Switching provider means deriving from that provider's host boundary.
 

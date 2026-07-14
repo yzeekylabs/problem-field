@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { ZodError } from "zod";
 
 import { DomainError, operationSetSchema } from "../src/shared/workspace.ts";
+import { readAgentRunActivity } from "./agent-activity.ts";
 import { kickAgentRunner, startAgentRunner } from "./agent-runner.ts";
 import { cancelConnectorLogin, connectConnector, getConnectorStates } from "./connectors.ts";
 import {
@@ -21,6 +22,22 @@ app.get("/api/health", (context) => context.json({ ok: true }));
 app.get("/api/workspace", async (context) => {
   context.header("Cache-Control", "no-store");
   return context.json(await readWorkspace());
+});
+
+app.get("/api/agent-runs/:runId/activity", async (context) => {
+  context.header("Cache-Control", "no-store");
+  try {
+    const activity = await readAgentRunActivity(context.req.param("runId"));
+    return activity
+      ? context.json(activity)
+      : context.json({ error: "not_found", message: "No activity has been recorded for this run." }, 404);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Invalid agent run ID.") {
+      return context.json({ error: "invalid_run_id", message: error.message }, 400);
+    }
+    console.error(error);
+    return context.json({ error: "activity_unavailable", message: "Agent activity could not be read." }, 500);
+  }
 });
 
 app.get("/api/connectors", async (context) => {

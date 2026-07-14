@@ -13,7 +13,7 @@ This is an early working slice, built to answer one question: **does it feel mat
 - Keep evidence visibly distinct from observations, patterns, and questions.
 - Preserve source provenance on evidence cards.
 - See pattern signal as evidence/source/contradiction composition rather than a fake score.
-- Ask a question from the canvas and have the local runner claim, execute, and report it through Codex.
+- Ask a question from the canvas and follow safe, live execution milestones while the local runner works through Codex.
 - Let Codex or Claude Code propose patterns and questions for explicit human review.
 - Reuse the selected Codex or Claude Code host's MCP configuration and connect low-friction sources without storing a second auth registry.
 - Reject stale concurrent updates instead of silently overwriting them.
@@ -31,7 +31,17 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ## Local agent and CLI
 
-The API starts a single local worker. Canvas requests move through `queued`, `running`, `completed`, or `failed`; progress and the final response remain visible in Agent review. Codex is the default runtime. Set `FIELD_AGENT_PROVIDER=claude` before `npm run dev` to use Claude Code instead.
+The API starts a single local worker. Canvas requests move through `queued`, `running`, `completed`, or `failed`; elapsed time, sanitized execution milestones, and the final response remain visible in Agent review. Raw commands, tool arguments, connector results, and private reasoning are not sent to the browser.
+
+Codex is the default runtime, pinned to GPT-5.6 Terra at medium reasoning effort with a 15-minute safety limit. These defaults keep everyday source and field work deliberate without silently inheriting a slow personal CLI profile. They remain explicit overrides rather than a second configuration store:
+
+```bash
+FIELD_CODEX_MODEL=gpt-5.6-terra
+FIELD_CODEX_REASONING_EFFORT=medium
+FIELD_AGENT_TIMEOUT_MS=900000
+```
+
+Set `FIELD_AGENT_PROVIDER=claude` to use Claude Code instead; that path defaults to the stable `sonnet` alias at medium effort and can be overridden with `FIELD_CLAUDE_MODEL` and `FIELD_CLAUDE_REASONING_EFFORT`.
 
 `AGENTS.md` and `CLAUDE.md` explain the shared write protocol. The core diagnostic and manual fallback commands are:
 
@@ -55,4 +65,4 @@ See [docs/product.md](docs/product.md), [docs/research-foundation.md](docs/resea
 
 ## Status
 
-Local-only, single-user prototype. Agent progress is durable but not token-streamed. Collaboration and hosted sync are deliberately deferred until the core thinking loop proves useful.
+Local-only, single-user prototype. Agent request outcomes remain canonical; sanitized run activity is a separate local read model and is not token-streamed. Collaboration and hosted sync are deliberately deferred until the core thinking loop proves useful.

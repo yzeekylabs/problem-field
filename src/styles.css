@@ -270,11 +270,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .proposal-card button.proposal-card__accept { border-color: var(--moss); color: #f8faf8; background: var(--moss); }
 .request-queue { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
 .request-queue > span { color: #747a71; font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
-.agent-run { display: grid; gap: 7px; padding: 11px 12px; border: 1px solid #dedacf; border-radius: 11px; background: #faf8f1; }
+.agent-run { display: grid; gap: 9px; padding: 12px; border: 1px solid #dedacf; border-radius: 11px; background: #faf8f1; }
+.agent-run__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .agent-run__status { display: flex; align-items: center; gap: 6px; color: #697269; }
-.agent-run__status strong { font-size: 9px; font-weight: 650; text-transform: capitalize; }
-.agent-run > p { margin: 0; color: #4f574f; font-size: 9px; line-height: 1.45; }
-.agent-run > small { color: #777e75; font-size: 8px; line-height: 1.5; white-space: pre-wrap; }
+.agent-run__status strong { font-size: 9px; font-weight: 650; }
+.agent-run__timing { color: #7b8278; font-size: 8px; line-height: 1.35; text-align: right; }
+.agent-run__timeline { display: grid; gap: 0; margin: 1px 0; padding: 0; list-style: none; }
+.agent-run__event { position: relative; display: grid; grid-template-columns: 19px minmax(0, 1fr); gap: 6px; min-height: 27px; color: #667067; }
+.agent-run__event:not(:last-child)::after { position: absolute; top: 17px; bottom: 0; left: 7px; width: 1px; background: #d8dfd5; content: ""; }
+.agent-run__event-icon { position: relative; z-index: 1; display: grid; width: 15px; height: 15px; place-items: center; border: 1px solid #d4dcd1; border-radius: 999px; color: #68766b; background: #f7faf4; }
+.agent-run__event > span:last-child { display: grid; gap: 2px; min-width: 0; padding-bottom: 7px; }
+.agent-run__event strong { color: #4e584f; font-size: 8.5px; font-weight: 600; line-height: 1.35; }
+.agent-run__event small { display: -webkit-box; overflow: hidden; color: #778078; font-size: 8px; line-height: 1.45; white-space: pre-wrap; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.agent-run__event--active .agent-run__event-icon { border-color: #b9cbb9; color: #46624d; background: #edf4e9; }
+.agent-run__event--active strong { color: #3e5946; }
+.agent-run__event--failed .agent-run__event-icon { border-color: #ddc7c0; color: var(--danger); background: #fff9f5; }
+.agent-run__waiting { display: flex; align-items: center; gap: 6px; color: #707a70; font-size: 8.5px; }
+.agent-run__task { display: -webkit-box; margin: 0; overflow: hidden; color: #626a62; font-size: 8px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.agent-run__task span { margin-right: 5px; color: #8a8f86; font-size: 7px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+.agent-run__result { color: #697269; font-size: 8px; line-height: 1.5; white-space: pre-wrap; }
 .agent-run__actions { display: flex; gap: 5px; }
 .agent-run__actions button { padding: 5px 7px; border: 1px solid #ddcec8; border-radius: 7px; color: #81534d; background: #fffdf9; font-size: 8px; cursor: pointer; }
 .agent-run__actions button:first-child { border-color: #c3cec0; color: #45604c; }
