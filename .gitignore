@@ -4,6 +4,7 @@ dist/
 *.log
 data/*.lock
 data/*.tmp
+data/local/
 work/
 outputs/
 .env

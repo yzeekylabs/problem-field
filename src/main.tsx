@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import App from "./App.tsx";
+import "@fontsource-variable/manrope/index.css";
+import "@fontsource-variable/newsreader/index.css";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 

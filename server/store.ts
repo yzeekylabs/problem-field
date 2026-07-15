@@ -1,16 +1,19 @@
-import { open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   applyOperationSet,
+  parseWorkspace,
   type OperationSet,
   type Workspace,
-  workspaceSchema,
 } from "../src/shared/workspace.ts";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const workspacePath = path.join(repositoryRoot, "data", "workspace.json");
+const seedWorkspacePath = path.join(repositoryRoot, "data", "workspace.json");
+const localDataPath = path.join(repositoryRoot, "data", "local");
+export const workspacePath = path.join(localDataPath, "workspace.json");
+export const assetsPath = path.join(localDataPath, "assets");
 const lockPath = `${workspacePath}.lock`;
 
 export class RevisionConflictError extends Error {
@@ -25,6 +28,19 @@ export class RevisionConflictError extends Error {
 
 const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function ensureLocalWorkspace() {
+  await mkdir(localDataPath, { recursive: true });
+  try {
+    await stat(workspacePath);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("ENOENT")) throw error;
+    const seed = await readFile(seedWorkspacePath, "utf8");
+    await writeFile(workspacePath, seed, { encoding: "utf8", flag: "wx" }).catch((writeError) => {
+      if (!(writeError instanceof Error) || !writeError.message.includes("EEXIST")) throw writeError;
+    });
+  }
+}
 
 async function acquireLock() {
   const startedAt = Date.now();
@@ -53,11 +69,13 @@ async function acquireLock() {
 }
 
 export async function readWorkspace(): Promise<Workspace> {
+  await ensureLocalWorkspace();
   const contents = await readFile(workspacePath, "utf8");
-  return workspaceSchema.parse(JSON.parse(contents));
+  return parseWorkspace(JSON.parse(contents));
 }
 
 export async function writeOperations(input: OperationSet): Promise<Workspace> {
+  await ensureLocalWorkspace();
   const release = await acquireLock();
   try {
     const current = await readWorkspace();
@@ -73,4 +91,26 @@ export async function writeOperations(input: OperationSet): Promise<Workspace> {
   } finally {
     await release();
   }
+}
+
+function safeExtension(originalName: string) {
+  const extension = path.extname(originalName).toLowerCase();
+  return /^\.[a-z0-9]{1,10}$/.test(extension) ? extension : "";
+}
+
+export async function writeSourceAsset(sourceId: string, file: File) {
+  await mkdir(assetsPath, { recursive: true });
+  const fileName = `${sourceId}-${crypto.randomUUID()}${safeExtension(file.name)}`;
+  const destination = path.join(assetsPath, fileName);
+  await writeFile(destination, new Uint8Array(await file.arrayBuffer()), { flag: "wx" });
+  return fileName;
+}
+
+export async function removeSourceAsset(fileName: string) {
+  await unlink(path.join(assetsPath, path.basename(fileName))).catch(() => undefined);
+}
+
+export async function readSourceAsset(fileName: string) {
+  if (path.basename(fileName) !== fileName) throw new Error("Invalid asset name.");
+  return readFile(path.join(assetsPath, fileName));
 }

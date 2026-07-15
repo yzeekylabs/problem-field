@@ -1,6 +1,7 @@
 import { Bot, ChevronRight, Database, FileText, Layers3 } from "lucide-react";
 
 import type { Workspace } from "../shared/workspace.ts";
+import { getCardDisplayCopy, getProjectDisplayCopy } from "../presentation-copy.ts";
 
 type SidebarProps = {
   workspace: Workspace;
@@ -15,7 +16,8 @@ export function Sidebar({
   onSelectCard,
   onCopyRequestCommand,
 }: SidebarProps) {
-  const openRequests = workspace.agentRequests.filter((request) => request.status === "open");
+  const openRequests = workspace.agentRequests.filter((request) => request.status === "queued" || request.status === "running");
+  const projectDisplay = getProjectDisplayCopy(workspace.project);
 
   return (
     <aside className="sidebar">
@@ -24,7 +26,7 @@ export function Sidebar({
           <Layers3 aria-hidden="true" size={14} />
           Problem frame
         </div>
-        <p>{workspace.project.question}</p>
+        <p title={workspace.project.question}>{projectDisplay.summary}</p>
       </section>
 
       <section className="sidebar__section">
@@ -61,18 +63,22 @@ export function Sidebar({
           <span className="count-badge">{workspace.cards.length}</span>
         </div>
         <div className="card-index">
-          {workspace.cards.map((card) => (
-            <button
-              className={selectedCardId === card.id ? "is-active" : ""}
-              key={card.id}
-              onClick={() => onSelectCard(card.id)}
-              type="button"
-            >
-              <span className={`kind-dot kind-dot--${card.kind}`} />
-              <span>{card.title}</span>
-              <ChevronRight aria-hidden="true" size={14} />
-            </button>
-          ))}
+          {workspace.cards.map((card) => {
+            const display = getCardDisplayCopy(card);
+            return (
+              <button
+                className={selectedCardId === card.id ? "is-active" : ""}
+                key={card.id}
+                onClick={() => onSelectCard(card.id)}
+                title={card.title}
+                type="button"
+              >
+                <span className={`kind-dot kind-dot--${card.kind}`} />
+                <span>{display.title}</span>
+                <ChevronRight aria-hidden="true" size={14} />
+              </button>
+            );
+          })}
         </div>
       </section>
 

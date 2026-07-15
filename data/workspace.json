@@ -1,166 +1,19 @@
 {
-  "schemaVersion": 1,
-  "revision": 2,
-  "updatedAt": "2026-07-14T03:58:11.729Z",
+  "schemaVersion": 6,
+  "revision": 0,
+  "updatedAt": "2026-07-14T04:00:00.000Z",
   "project": {
-    "name": "Problem Field",
-    "question": "How might one surface help us make sense of a problem across scattered source material without losing fidelity or jumping prematurely to solutions?",
-    "status": "exploring"
+    "name": "Untitled field",
+    "question": "What problem space are you trying to understand?",
+    "status": "exploring",
+    "activeStage": "orient",
+    "onboardingComplete": false
   },
-  "sources": [
-    {
-      "id": "source-project-brief",
-      "title": "Initial problem-space brief",
-      "kind": "note",
-      "origin": "Founding conversation — 14 July 2026",
-      "summary": "A description of moving between calls, source material, chat, and flat visual boards while trying to understand the core problem.",
-      "importedAt": "2026-07-14T04:00:00.000Z"
-    }
-  ],
-  "cards": [
-    {
-      "id": "card-evidence-between",
-      "kind": "evidence",
-      "title": "Caught between two surfaces",
-      "body": "The thinking is happening between a visual board and a chat, with neither surface holding the complete picture.",
-      "position": {
-        "x": 80,
-        "y": 120
-      },
-      "sourceRef": {
-        "sourceId": "source-project-brief",
-        "locator": "Opening description",
-        "quote": "I'm kind of floating in between the two, trying to take things from the chat and represent them on the board."
-      },
-      "createdBy": "human",
-      "createdAt": "2026-07-14T04:00:00.000Z",
-      "updatedAt": "2026-07-14T04:00:00.000Z"
-    },
-    {
-      "id": "card-evidence-losing",
-      "kind": "evidence",
-      "title": "Insights disappear in translation",
-      "body": "Moving material between tools is not neutral; context and insight are being dropped along the way.",
-      "position": {
-        "x": 80,
-        "y": 390
-      },
-      "sourceRef": {
-        "sourceId": "source-project-brief",
-        "locator": "Current workflow",
-        "quote": "I'm finding that I'm losing things."
-      },
-      "createdBy": "human",
-      "createdAt": "2026-07-14T04:00:00.000Z",
-      "updatedAt": "2026-07-14T04:00:00.000Z"
-    },
-    {
-      "id": "card-observation-handoffs",
-      "kind": "observation",
-      "title": "Every handoff asks for reinterpretation",
-      "body": "Copying an insight from transcript to chat to board forces it to be re-summarized, relocated, and separated from its source.",
-      "position": {
-        "x": 470,
-        "y": 170
-      },
-      "createdBy": "human",
-      "createdAt": "2026-07-14T04:00:00.000Z",
-      "updatedAt": "2026-07-14T04:00:00.000Z"
-    },
-    {
-      "id": "card-observation-flat",
-      "kind": "observation",
-      "title": "The board stores layout, not understanding",
-      "body": "Flat canvases can show where objects sit, but do not naturally preserve why they are related or what evidence supports them.",
-      "position": {
-        "x": 470,
-        "y": 450
-      },
-      "createdBy": "human",
-      "createdAt": "2026-07-14T04:00:00.000Z",
-      "updatedAt": "2026-07-14T04:00:00.000Z"
-    },
-    {
-      "id": "card-pattern-attention",
-      "kind": "pattern",
-      "title": "The real tax is fragmented attention",
-      "body": "The problem is not merely scattered files. The sensemaking loop itself is split across tools, forcing the user to act as the integration layer.",
-      "position": {
-        "x": 870,
-        "y": 270
-      },
-      "createdBy": "system",
-      "createdAt": "2026-07-14T04:00:00.000Z",
-      "updatedAt": "2026-07-14T04:00:00.000Z"
-    },
-    {
-      "id": "card-question-core",
-      "kind": "question",
-      "title": "What must remain inspectable?",
-      "body": "Which links between source, excerpt, interpretation, and pattern must stay one click away for the result to remain trustworthy?",
-      "position": {
-        "x": 1240,
-        "y": 120
-      },
-      "createdBy": "human",
-      "createdAt": "2026-07-14T04:00:00.000Z",
-      "updatedAt": "2026-07-14T04:00:00.000Z"
-    },
-    {
-      "id": "card-question-agent",
-      "kind": "question",
-      "title": "What should an agent be allowed to change?",
-      "body": "Can the agent surface and arrange possible patterns without collapsing evidence into conclusions or taking ownership of judgment?",
-      "position": {
-        "x": 1240,
-        "y": 440
-      },
-      "createdBy": "human",
-      "createdAt": "2026-07-14T04:00:00.000Z",
-      "updatedAt": "2026-07-14T04:00:00.000Z"
-    }
-  ],
-  "connections": [
-    {
-      "id": "connection-1",
-      "from": "card-evidence-between",
-      "to": "card-observation-handoffs",
-      "kind": "supports",
-      "label": "reveals"
-    },
-    {
-      "id": "connection-2",
-      "from": "card-evidence-losing",
-      "to": "card-observation-handoffs",
-      "kind": "supports",
-      "label": "consequence"
-    },
-    {
-      "id": "connection-3",
-      "from": "card-observation-handoffs",
-      "to": "card-pattern-attention",
-      "kind": "supports",
-      "label": "contributes to"
-    },
-    {
-      "id": "connection-4",
-      "from": "card-observation-flat",
-      "to": "card-pattern-attention",
-      "kind": "supports",
-      "label": "contributes to"
-    },
-    {
-      "id": "connection-5",
-      "from": "card-pattern-attention",
-      "to": "card-question-core",
-      "kind": "raises"
-    },
-    {
-      "id": "connection-6",
-      "from": "card-pattern-attention",
-      "to": "card-question-agent",
-      "kind": "raises"
-    }
-  ],
-  "agentRequests": []
+  "sources": [],
+  "cards": [],
+  "connections": [],
+  "decisionFrames": [],
+  "criterionLinks": [],
+  "agentRequests": [],
+  "agentProposals": []
 }
